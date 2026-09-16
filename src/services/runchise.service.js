@@ -95,9 +95,10 @@ async function updateCustomer(
 
     return result.data?.customer ?? null;
   } catch (error) {
+    console.log(error.response.data);
     if (axios.isAxiosError(error)) {
-      const message = error.response?.data?.errors
-        ? JSON.stringify(error.response.data.errors)
+      const message = error.response?.data?.message
+        ? JSON.stringify(error.response.data.message)
         : error.message;
       throw new Error(message);
     }
@@ -584,6 +585,47 @@ async function getListSaleTransactionSummary(lastIdsByLocation = {}) {
   return { sale_transactions, lastIdsByLocation: updatedLastIds };
 }
 
+async function getListCustomerPointHistory(runchise_customer_id) {
+  try {
+    let has_more = true;
+    let last_id = undefined;
+    let histories = [];
+
+    while (has_more) {
+      const params = new URLSearchParams({
+        ...(last_id ? { last_id: String(last_id) } : {}),
+      });
+
+      const res = await runchiseClient.get(
+        `/customer_point/${runchise_customer_id}/history?${params}`,
+      );
+
+      const data = res.data;
+
+      histories.push(...data.customer_point_histories);
+      has_more = data.paging.has_more;
+      last_id = data.paging.last_id;
+    }
+
+    return histories;
+  } catch (error) {
+    // 404 berarti customer belum punya riwayat poin di runchise
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return [];
+    }
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.errors
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      throw Object.assign(new Error(message, { cause: error }), {
+        code: "RUNCHISE_REQUEST_FAILED",
+        statusCode: 502,
+      });
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   findCustomerByPhone,
   createCustomer,
@@ -601,4 +643,5 @@ module.exports = {
   getListPromoCodes,
   getPromo,
   getListSaleTransactionSummary,
+  getListCustomerPointHistory,
 };

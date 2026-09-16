@@ -1,5 +1,11 @@
 const prisma = require("../../lib/prisma");
+const {
+  updateCustomerPointHistory,
+} = require("../../services/customer.service");
 const { findCustomerByPhone } = require("../../services/runchise.service");
+const {
+  generateSaleTransactionsFromRunchise,
+} = require("../../services/saleTransaction.service");
 
 async function customerProcessHandler(transactions) {
   const phones = [
@@ -27,15 +33,23 @@ async function customerProcessHandler(transactions) {
           const data = await findCustomerByPhone({
             phone: customer.phone_number,
           });
+          if (!data) return;
 
           await prisma.customer.update({
             where: { customer_id: customer.customer_id },
             data: {
+              runchise_id: data.id,
               available_point: data.available_point,
               total_point: data.total_point,
               runchise_synced_at: new Date(),
             },
           });
+
+          // Update customer transactions
+          await generateSaleTransactionsFromRunchise(customer.customer_id);
+
+          // Update customer points history
+          await updateCustomerPointHistory(customer.customer_id);
 
           updated++;
         } catch (error) {

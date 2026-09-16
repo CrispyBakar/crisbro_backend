@@ -17,7 +17,8 @@
       "Bash(node -e ' *)",
       "Bash(PORT=5099 DOCS_ACCESS_ALLOWLIST=127.0.0.1 node -e ' *)",
       "Bash(sed 's/=.*$/=<redacted>/')",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(npx eslint *)"
     ],
     "additionalDirectories": [
       "/Users/user/My Drive/Dev Projects/PT Reka Cipta Selera/crisbro/backend/src/services",

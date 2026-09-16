@@ -1,3 +1,4 @@
+const { z } = require("zod");
 const {
   successRequest,
   badRequest,
@@ -5,11 +6,15 @@ const {
 } = require("../utils/responseReuest");
 const {
   generateSaleTransactionsFromRunchise,
+  listSaleTransactionsByCustomerId,
 } = require("../services/saleTransaction.service");
+const { getCustomerById } = require("../services/customer.service");
 const {
   generateSaleTransactionSchema,
+  listSaleTransactionQuerySchema,
 } = require("../validation/saleTransaction/saleTransaction-validation");
 
+const uuidSchema = z.string().uuid("ID must be a valid UUID");
 const CUSTOMER_NOT_FOUND_MESSAGE = "Customer tidak ditemukan";
 const CUSTOMER_NOT_SYNCED_MESSAGE =
   "Customer belum tersinkron dengan Runchise (runchise_id kosong)";
@@ -61,4 +66,45 @@ async function generateSaleTransactions(req, res) {
   }
 }
 
-module.exports = { generateSaleTransactions };
+// Daftar transaksi penjualan milik satu customer dari tabel lokal hasil
+// sinkronisasi Runchise. Khusus admin dan marketing.
+async function getSaleTransactionsByCustomer(req, res) {
+  const idValidation = uuidSchema.safeParse(req.params.customer_id);
+
+  if (!idValidation.success) {
+    return validationError(res, idValidation.error);
+  }
+
+  const queryValidation = listSaleTransactionQuerySchema.safeParse(req.query);
+
+  if (!queryValidation.success) {
+    return validationError(res, queryValidation.error);
+  }
+
+  try {
+    const customer = await getCustomerById(idValidation.data);
+
+    if (!customer) {
+      return badRequest({ res, code: 404, error: "Customer not found" });
+    }
+
+    const result = await listSaleTransactionsByCustomerId(
+      idValidation.data,
+      queryValidation.data,
+    );
+
+    return successRequest({
+      res,
+      data: result,
+      message: "Customer sale transactions retrieved successfully.",
+    });
+  } catch (error) {
+    return respondWithServerError(
+      res,
+      error,
+      "List customer sale transactions failed",
+    );
+  }
+}
+
+module.exports = { generateSaleTransactions, getSaleTransactionsByCustomer };

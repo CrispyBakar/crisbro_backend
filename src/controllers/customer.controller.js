@@ -9,6 +9,7 @@ const {
   getCustomerById,
   getCustomerByUserId,
   updateCustomerById,
+  listCustomerPointHistory,
 } = require("../services/customer.service");
 const {
   updateCustomerSchema,
@@ -28,6 +29,15 @@ const updateMyCustomerSchema = updateCustomerSchema.omit({
   status: true,
   last_updated_by_id: true,
   owner_location_id: true,
+});
+const listPointHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(10),
+  point_type: z.enum(["manual_adjustment", "earned", "redeemed"]).optional(),
+  sort_by: z
+    .enum(["formatted_created_at", "issued_at_time"])
+    .default("formatted_created_at"),
+  sort_order: z.enum(["asc", "desc"]).default("desc"),
 });
 
 function validationError(res, error) {
@@ -153,6 +163,14 @@ async function updateCustomer(req, res) {
       return badRequest({ res, code: 409, error: error.message });
     }
 
+    if (error.message === "Email is already registered") {
+      return badRequest({ res, code: 409, error: error.message });
+    }
+
+    if (error.message === "Owner location not found") {
+      return badRequest({ res, code: 404, error: error.message });
+    }
+
     if (
       error.message === "No valid fields to update" ||
       error.message === "No valid Runchise fields to update" ||
@@ -224,6 +242,14 @@ async function updateMyCustomer(req, res) {
       return badRequest({ res, code: 409, error: error.message });
     }
 
+    if (error.message === "Email is already registered") {
+      return badRequest({ res, code: 409, error: error.message });
+    }
+
+    if (error.message === "Owner location not found") {
+      return badRequest({ res, code: 404, error: error.message });
+    }
+
     if (
       error.message === "No valid fields to update" ||
       error.message === "No valid Runchise fields to update" ||
@@ -236,6 +262,74 @@ async function updateMyCustomer(req, res) {
   }
 }
 
+async function getCustomerPointHistory(req, res) {
+  const idValidation = uuidSchema.safeParse(req.params.customer_id);
+
+  if (!idValidation.success) {
+    return validationError(res, idValidation.error);
+  }
+
+  const queryValidation = listPointHistoryQuerySchema.safeParse(req.query);
+
+  if (!queryValidation.success) {
+    return validationError(res, queryValidation.error);
+  }
+
+  try {
+    const customer = await getCustomerById(idValidation.data);
+
+    if (!customer) {
+      return badRequest({ res, code: 404, error: "Customer not found" });
+    }
+
+    const result = await listCustomerPointHistory(
+      idValidation.data,
+      queryValidation.data,
+    );
+
+    return successRequest({
+      res,
+      data: result,
+      message: "Customer point history retrieved successfully.",
+    });
+  } catch (error) {
+    return respondWithServerError(
+      res,
+      error,
+      "List customer point history failed",
+    );
+  }
+}
+
+async function getMyPointHistory(req, res) {
+  const queryValidation = listPointHistoryQuerySchema.safeParse(req.query);
+
+  if (!queryValidation.success) {
+    return validationError(res, queryValidation.error);
+  }
+
+  try {
+    const customer = await getCustomerByUserId(req.user.user_id);
+
+    if (!customer) {
+      return badRequest({ res, code: 404, error: "Customer not found" });
+    }
+
+    const result = await listCustomerPointHistory(
+      customer.customer_id,
+      queryValidation.data,
+    );
+
+    return successRequest({
+      res,
+      data: result,
+      message: "Point history retrieved successfully.",
+    });
+  } catch (error) {
+    return respondWithServerError(res, error, "List own point history failed");
+  }
+}
+
 module.exports = {
   listCustomers,
   getCustomer,
@@ -243,4 +337,6 @@ module.exports = {
   updateCustomer,
   getMyCustomer,
   updateMyCustomer,
+  getCustomerPointHistory,
+  getMyPointHistory,
 };

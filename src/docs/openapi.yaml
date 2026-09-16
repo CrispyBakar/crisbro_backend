@@ -555,6 +555,125 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /api/customers/me/point-history:
+    get:
+      tags: [Customers]
+      summary: Riwayat poin customer yang sedang login (paginated)
+      description: >-
+        Riwayat perubahan poin milik customer yang login, bersumber dari tabel
+        hasil sinkronisasi Runchise.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - in: query
+          name: point_type
+          description: Filter berdasarkan tipe perubahan poin
+          schema:
+            type: string
+            enum: [manual_adjustment, earned, redeemed]
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum: [formatted_created_at, issued_at_time]
+            default: formatted_created_at
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Daftar riwayat poin milik customer yang login
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/CustomerPointHistory"
+                          meta:
+                            $ref: "#/components/schemas/PageMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/customers/{customer_id}/point-history:
+    get:
+      tags: [Customers]
+      summary: Riwayat poin customer by ID (paginated)
+      description: >-
+        Riwayat perubahan poin customer tertentu, bersumber dari tabel hasil
+        sinkronisasi Runchise. Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - in: query
+          name: point_type
+          description: Filter berdasarkan tipe perubahan poin
+          schema:
+            type: string
+            enum: [manual_adjustment, earned, redeemed]
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum: [formatted_created_at, issued_at_time]
+            default: formatted_created_at
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Daftar riwayat poin customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/CustomerPointHistory"
+                          meta:
+                            $ref: "#/components/schemas/PageMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /api/products:
     get:
       tags: [Products]
@@ -1221,6 +1340,84 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /api/locations:
+    get:
+      tags: [Locations]
+      summary: List lokasi outlet
+      description: >-
+        Daftar lokasi outlet yang tersinkron dari Runchise, mendukung
+        pencarian, filter, dan paginasi.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: query
+          description: >-
+            Cari berdasarkan nama lokasi, kota, provinsi, atau alamat
+            pengiriman (case-insensitive)
+          schema:
+            type: string
+            default: ""
+        - in: query
+          name: city
+          description: Filter exact match kota (case-insensitive)
+          schema:
+            type: string
+        - in: query
+          name: status
+          description: Filter exact match status lokasi
+          schema:
+            type: string
+        - in: query
+          name: branch_type
+          description: Filter exact match tipe cabang
+          schema:
+            type: string
+        - in: query
+          name: sub_brand_id
+          description: Filter lokasi yang memiliki sub-brand (UUID) ini
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: take
+          description: Jumlah item per halaman (maksimal 100)
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: skip
+          description: Jumlah item yang dilewati
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Daftar lokasi
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                          total_page:
+                            type: integer
+                          locations:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Location"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/locations/generate:
     post:
       tags: [Locations]
@@ -1243,6 +1440,64 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/locations/{location_id}:
+    delete:
+      tags: [Locations]
+      summary: Hapus lokasi outlet
+      description: >-
+        Menghapus lokasi dari database lokal berdasarkan UUID. Lokasi yang
+        masih terhubung dengan customer (sebagai owner location) tidak dapat
+        dihapus. Catatan: lokasi dapat tersinkron kembali dari Runchise pada
+        proses generate berikutnya.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: location_id
+          required: true
+          description: UUID lokasi yang akan dihapus
+          schema:
+            type: string
+            format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+      responses:
+        "200":
+          description: Lokasi yang dihapus
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Location"
+        "400":
+          description: location_id tidak disertakan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Lokasi tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Lokasi masih terhubung dengan customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/ServerError"
 
@@ -1286,6 +1541,66 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  /api/sale-transactions/customer/{customer_id}:
+    get:
+      tags: [Sale Transactions]
+      summary: Daftar sale transaction customer by ID (paginated)
+      description: >-
+        Daftar transaksi penjualan milik customer tertentu dari tabel lokal
+        hasil sinkronisasi Runchise. Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - in: query
+          name: location_id
+          description: Filter berdasarkan outlet (location_id lokal)
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum: [sales_time, gross_sales, net_sales, subtotal, created_at]
+            default: sales_time
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Daftar sale transaction customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/SaleTransaction"
+                          meta:
+                            $ref: "#/components/schemas/PageMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /api/sale-transactions/generate:
     post:
@@ -1785,6 +2100,88 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    CustomerPointHistory:
+      type: object
+      properties:
+        customer_point_history:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        runchise_id:
+          type: integer
+          nullable: true
+        customer_point_id:
+          type: integer
+          nullable: true
+        point_type:
+          type: string
+          nullable: true
+          enum: [manual_adjustment, earned, redeemed]
+        point_snapshot:
+          type: integer
+          nullable: true
+        point:
+          type: integer
+          nullable: true
+          description: Jumlah poin yang berubah
+        sale_transaction_uuid:
+          type: string
+          nullable: true
+        sale_transaction_id:
+          type: integer
+          nullable: true
+        sales_return_id:
+          type: integer
+          nullable: true
+        void_by:
+          type: string
+          nullable: true
+        void_id:
+          type: integer
+          nullable: true
+        void_reason:
+          type: string
+        notes:
+          type: string
+        created_by_id:
+          type: integer
+          nullable: true
+        location_id:
+          type: integer
+          nullable: true
+        sales_no:
+          type: string
+          nullable: true
+        expired_point:
+          type: integer
+          nullable: true
+        expired_at:
+          type: string
+          format: date-time
+          nullable: true
+        customer_expired_point_id:
+          type: integer
+          nullable: true
+        customer_order_uuid:
+          type: string
+          nullable: true
+        formatted_created_at:
+          type: string
+          format: date-time
+          nullable: true
+        issued_at_time:
+          type: string
+          format: date-time
+          nullable: true
+        point_type_description:
+          type: string
+          nullable: true
+        channel:
+          type: string
+          nullable: true
 
     CustomerUpdateRequest:
       type: object
@@ -2474,6 +2871,80 @@ components:
           type: string
           format: date-time
 
+    Location:
+      type: object
+      properties:
+        location_id:
+          type: string
+          format: uuid
+        runchise_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        shipping_address:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        province:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        contact_number:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        branch_type:
+          type: string
+          nullable: true
+        gmap_address:
+          type: string
+          nullable: true
+        longitude:
+          type: string
+          nullable: true
+        latitude:
+          type: string
+          nullable: true
+        sub_brands:
+          type: array
+          description: Sub-brand yang aktif di lokasi ini (tanpa timestamp)
+          items:
+            type: object
+            properties:
+              sub_brand_id:
+                type: string
+                format: uuid
+              runchise_id:
+                type: integer
+              name:
+                type: string
+              image_url:
+                type: string
+                nullable: true
+              location_type:
+                type: string
+                nullable: true
+              is_select_all_location:
+                type: boolean
+              enable_online_order:
+                type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
     SaleTransactionGenerateSummary:
       type: object
       properties:
@@ -2492,3 +2963,96 @@ components:
           type: integer
         skipped_location_not_found:
           type: integer
+
+    SaleTransaction:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        runchise_id:
+          type: integer
+          nullable: true
+          description: ID transaksi di Runchise (unique key upsert)
+        runchise_brand_id:
+          type: integer
+          nullable: true
+        runchise_sales_no:
+          type: string
+          nullable: true
+        runchise_customer_id:
+          type: integer
+          nullable: true
+        runchise_location_id:
+          type: integer
+          nullable: true
+        gross_sales:
+          type: number
+          nullable: true
+        net_sales:
+          type: number
+          nullable: true
+        location_name:
+          type: string
+          nullable: true
+        order_type_name:
+          type: string
+          nullable: true
+        total_point:
+          type: integer
+          nullable: true
+        earned_point:
+          type: integer
+          nullable: true
+        redeemed_point:
+          type: string
+          nullable: true
+        available_point:
+          type: integer
+          nullable: true
+        products:
+          type: array
+          nullable: true
+          description: >-
+            Gabungan produk dari seluruh entry send_order_users pada response
+            Runchise
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+        subtotal:
+          type: number
+          nullable: true
+        net_sales_after_tax:
+          type: number
+          nullable: true
+        sales_time:
+          type: string
+          format: date-time
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        applied_promos_redeemed_point:
+          type: integer
+          nullable: true
+        loyalty_discount_fee:
+          type: number
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true

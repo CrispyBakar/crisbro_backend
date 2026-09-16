@@ -149,6 +149,7 @@ model Customer {
 
   point_history     PointHistory[]
   sale_transactions SaleTransaction[]
+  customer_point_history  CustomerPointHistory[]
 
   @@index([phone_number])
   @@index([normalized_phone_number])
@@ -239,6 +240,11 @@ model SaleTransaction {
   net_sales                     Float?
   location_name                 String?
   order_type_name               String?
+  total_point                   Int?
+  earned_point                  Int?
+  redeemed_point                String?
+  available_point               Int?
+  products                      Json?
   subtotal                      Float?
   net_sales_after_tax           Float?
   sales_time                    DateTime?
@@ -380,6 +386,45 @@ model SyncCheckpoints {
   @@index([job_category])
 }
 
+model CustomerPointHistory {
+  customer_point_history   String   @id   @default(uuid())
+  customer_id              String  
+  runchise_id              Int?    @unique
+  customer_point_id        Int?
+  point_type               PointType?
+  point_snapshot           Int?
+  point                    Int?
+  sale_transaction_uuid    String?
+  sale_transaction_id      Int?
+  sales_return_id          Int?
+  void_by                  String?
+  void_id                  Int?
+  void_reason              String
+  notes                    String
+  created_by_id            Int?
+  location_id              Int?
+  sales_no                 String?
+  expired_point            Int?
+  expired_at               DateTime?
+  customer_expired_point_id Int?
+  customer_order_uuid       String?
+  formatted_created_at    DateTime?
+  issued_at_time          DateTime?
+  point_type_description  String?
+  channel                 String?
+
+  customer              Customer  @relation(fields:[customer_id], references:[customer_id], onDelete: Cascade)
+
+  @@index(runchise_id)
+  @@index(customer_id)
+}
+
 enum JobCategory {
   sale_transactions
+}
+
+enum PointType {
+  manual_adjustment
+  earned
+  redeemed
 }
