@@ -7,7 +7,9 @@
     "postinstall": "prisma generate",
     "lint": "eslint src api",
     "dev": "nodemon src/index.js",
-    "worker:customer-sync": "node src/jobs/customer-sync/worker.js"
+    "worker:customer-sync": "node src/jobs/customer-sync/worker.js",
+    "db:migrate": "bash scripts/db-migrate.sh",
+    "db:unlock": "node scripts/db-unlock.mjs"
   },
   "keywords": [],
   "author": "",

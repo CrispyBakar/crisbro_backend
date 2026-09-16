@@ -8,6 +8,8 @@ const {
   updateCustomer,
   getMyCustomer,
   updateMyCustomer,
+  getCustomerPointHistory,
+  getMyPointHistory,
 } = require("../controllers/customer.controller");
 
 const adminOrMarketing = requireRole("admin", "marketing");
@@ -17,10 +19,12 @@ router.use(auth);
 
 router.get("/me", customerOnly, getMyCustomer);
 router.patch("/me", customerOnly, updateMyCustomer);
+router.get("/me/point-history", customerOnly, getMyPointHistory);
 
 router.get("/", adminOrMarketing, listCustomers);
 router.get("/user/:user_id", adminOrMarketing, getCustomerByUser);
 router.get("/:customer_id", adminOrMarketing, getCustomer);
 router.patch("/:customer_id", adminOrMarketing, updateCustomer);
+router.get("/:customer_id/point-history", adminOrMarketing, getCustomerPointHistory);
 
 module.exports = router;

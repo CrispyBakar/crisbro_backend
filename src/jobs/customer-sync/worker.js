@@ -1,7 +1,10 @@
 require("dotenv").config({ quiet: true });
 
 const { Worker } = require("bullmq");
-const { registerCustomerSyncScheduler } = require("./scheduler");
+const {
+  registerCustomerSyncScheduler,
+  registeredCustomerSyncPointHistory,
+} = require("./scheduler");
 const { connection } = require("../../lib/redis");
 const prisma = require("../../lib/prisma");
 const {
@@ -10,6 +13,9 @@ const {
   getPromo,
   getListPromoCodes,
 } = require("../../services/runchise.service");
+const {
+  updateCustomerPointHistory,
+} = require("../../services/customer.service");
 const { customerProcessHandler } = require("./customerProcess");
 
 const worker = new Worker(
@@ -116,6 +122,70 @@ const worker = new Worker(
     concurrency: 1,
   },
 );
+
+const workerDaily = new Worker(
+  "customer-point-daily",
+  async (job) => {
+    // Get all customers registered & sudah tersinkron ke runchise
+    const customers = await prisma.customer.findMany({
+      where: {
+        status: "active",
+        runchise_id: { not: null },
+        phone_number: { not: null },
+      },
+      select: {
+        customer_id: true,
+        phone_number: true,
+      },
+    });
+
+    for (const customer of customers) {
+      const runchiseCustomer = await findCustomerByPhone({
+        phone: customer.phone_number,
+      });
+      if (!runchiseCustomer) continue;
+
+      // Updated customer data point
+      await prisma.customer.update({
+        where: { customer_id: customer.customer_id },
+        data: {
+          runchise_id: runchiseCustomer.id,
+          available_point: runchiseCustomer.available_point,
+          total_point: runchiseCustomer.total_point,
+          runchise_synced_at: new Date(),
+        },
+      });
+
+      // Update customer points history
+      await updateCustomerPointHistory(customer.customer_id);
+    }
+  },
+  {
+    connection,
+    concurrency: 1,
+  },
+);
+
+workerDaily.on("error", (error) => {
+  console.error("Customer sync history point error: ", error);
+});
+
+workerDaily.on("failed", (job, error) => {
+  console.error(`Customer sync job ${job?.id} gagal: ${error}`);
+});
+
+workerDaily.on("completed", (complete) => {
+  console.info(`Customer sync point history completed: ${complete}`);
+});
+
+registeredCustomerSyncPointHistory()
+  .then(() => {
+    console.log("Customer sync point aktif setiap 1 hari sekali.");
+  })
+  .catch((error) => {
+    console.error("Gagal sync point scheduler: ", error);
+    process.exit(1);
+  });
 
 worker.on("error", (error) => {
   console.error("Customer sync worker error:", error);

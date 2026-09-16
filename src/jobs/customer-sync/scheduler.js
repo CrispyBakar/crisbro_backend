@@ -1,4 +1,4 @@
-const { syncQueue } = require("../../lib/queue");
+const { syncQueue, pointQueue } = require("../../lib/queue");
 
 async function registerCustomerSyncScheduler() {
   return syncQueue.upsertJobScheduler(
@@ -15,4 +15,25 @@ async function registerCustomerSyncScheduler() {
   );
 }
 
-module.exports = { registerCustomerSyncScheduler };
+async function registeredCustomerSyncPointHistory() {
+  // Hapus scheduler lama yang dulu salah terdaftar di queue customer-sync
+  await syncQueue.removeJobScheduler("customer-sync-daily");
+
+  return pointQueue.upsertJobScheduler(
+    "customer-sync-daily",
+    { pattern: "0 1 * * *" },
+    {
+      name: "customer-point-daily",
+      data: {},
+      opts: {
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      },
+    },
+  );
+}
+
+module.exports = {
+  registerCustomerSyncScheduler,
+  registeredCustomerSyncPointHistory,
+};

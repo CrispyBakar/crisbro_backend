@@ -61,9 +61,7 @@ async function generateLocationService() {
   const runchiseSubBrandIds = [
     ...new Set(
       remoteLocations.flatMap((location) =>
-        getRunchiseSubBrandIds(
-          location?.sub_brands ?? location?.sub_brand_ids,
-        ),
+        getRunchiseSubBrandIds(location?.sub_brands ?? location?.sub_brand_ids),
       ),
     ),
   ];
@@ -101,7 +99,9 @@ async function generateLocationService() {
   const existingLocations = locations.length
     ? await prisma.location.findMany({
         where: {
-          runchise_id: { in: locations.map((location) => location.runchise_id) },
+          runchise_id: {
+            in: locations.map((location) => location.runchise_id),
+          },
         },
         select: { location_id: true, runchise_id: true },
       })
@@ -145,10 +145,51 @@ async function generateLocationService() {
   };
 }
 
-async function listLocationsService() {
-  const locations = await prisma.location.findMany({
-    orderBy: [{ city: "asc" }, { name: "asc" }, { location_id: "asc" }],
-  });
+async function listLocationsService({
+  query,
+  city,
+  status,
+  branch_type,
+  sub_brand_id,
+  take,
+  skip,
+} = {}) {
+  const filters = [];
+
+  const search = optionalString(query);
+  if (search) {
+    filters.push({
+      OR: ["name", "city", "province", "shipping_address"].map((field) => ({
+        [field]: { contains: search, mode: "insensitive" },
+      })),
+    });
+  }
+
+  const cityFilter = optionalString(city);
+  if (cityFilter) {
+    filters.push({ city: { equals: cityFilter, mode: "insensitive" } });
+  }
+
+  const statusFilter = optionalString(status);
+  if (statusFilter) filters.push({ status: statusFilter });
+
+  const branchTypeFilter = optionalString(branch_type);
+  if (branchTypeFilter) filters.push({ branch_type: branchTypeFilter });
+
+  const subBrandIdFilter = optionalString(sub_brand_id);
+  if (subBrandIdFilter) filters.push({ sub_brands: { has: subBrandIdFilter } });
+
+  const where = filters.length ? { AND: filters } : undefined;
+
+  const [total, locations] = await prisma.$transaction([
+    prisma.location.count({ where }),
+    prisma.location.findMany({
+      where,
+      take,
+      skip,
+      orderBy: [{ city: "asc" }, { name: "asc" }, { location_id: "asc" }],
+    }),
+  ]);
   const subBrandIds = [
     ...new Set(locations.flatMap((location) => location.sub_brands)),
   ];
@@ -170,16 +211,56 @@ async function listLocationsService() {
     subBrands.map((subBrand) => [subBrand.sub_brand_id, subBrand]),
   );
 
-  return locations.map((location) => ({
-    ...location,
-    sub_brands: location.sub_brands
-      .map((subBrandId) => subBrandById.get(subBrandId))
-      .filter(Boolean),
-  }));
+  return {
+    total,
+    total_page: take ? Math.ceil(total / take) : 1,
+    locations: locations.map((location) => ({
+      ...location,
+      sub_brands: location.sub_brands
+        .map((subBrandId) => subBrandById.get(subBrandId))
+        .filter(Boolean),
+    })),
+  };
+}
+
+async function deleteLocationService(locationId) {
+  const customerCount = await prisma.customer.count({
+    where: { owner_location_id: locationId },
+  });
+
+  if (customerCount) {
+    return {
+      code: 409,
+      data: null,
+      message: `Location tidak dapat dihapus karena masih terhubung dengan ${customerCount} customer.`,
+    };
+  }
+
+  try {
+    const deletedLocation = await prisma.location.delete({
+      where: { location_id: locationId },
+    });
+
+    return {
+      code: 200,
+      data: deletedLocation,
+      message: "Location berhasil dihapus.",
+    };
+  } catch (error) {
+    if (error?.code === "P2025") {
+      return {
+        code: 404,
+        data: null,
+        message: "Location tidak ditemukan.",
+      };
+    }
+    throw error;
+  }
 }
 
 module.exports = {
   generateLocationService,
   listLocationsService,
+  deleteLocationService,
   mapRunchiseLocation,
 };

@@ -1,11 +1,16 @@
 const prisma = require("../lib/prisma");
 const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
-const { updateCustomer } = require("./runchise.service");
+const {
+  updateCustomer,
+  getListCustomerPointHistory,
+} = require("./runchise.service");
 
 const ALLOWED_SORT_FIELDS = ["created_at", "name", "phone_number", "status"];
+const POINT_HISTORY_SORT_FIELDS = ["formatted_created_at", "issued_at_time"];
 const ALLOWED_UPDATE_FIELDS = [
   "name",
   "phone_number",
+  "email",
   "address",
   "province",
   "city",
@@ -15,6 +20,7 @@ const ALLOWED_UPDATE_FIELDS = [
   "status",
   "last_updated_by_id",
   "owner_location_id",
+  "dob",
 ];
 const RUNCHISE_UPDATE_FIELDS = [
   "name",
@@ -31,6 +37,14 @@ const RUNCHISE_UPDATE_FIELDS = [
 
 function sanitizeOrderBy(sort_by, sort_order) {
   const field = ALLOWED_SORT_FIELDS.includes(sort_by) ? sort_by : "created_at";
+  const order = ["asc", "desc"].includes(sort_order) ? sort_order : "desc";
+  return { [field]: order };
+}
+
+function sanitizePointHistoryOrderBy(sort_by, sort_order) {
+  const field = POINT_HISTORY_SORT_FIELDS.includes(sort_by)
+    ? sort_by
+    : "formatted_created_at";
   const order = ["asc", "desc"].includes(sort_order) ? sort_order : "desc";
   return { [field]: order };
 }
@@ -91,8 +105,13 @@ async function getCustomerById(customer_id) {
   if (!customer_id) throw new Error("customer_id is required");
 
   try {
+    // Include email user & runchise_id lokasi owner untuk form edit customer
     const customer = await prisma.customer.findUnique({
       where: { customer_id: customer_id },
+      include: {
+        user: { select: { email: true } },
+        owner_location: { select: { runchise_id: true, name: true } },
+      },
     });
 
     return customer;
@@ -116,21 +135,19 @@ async function getCustomerByUserId(user_id) {
 }
 
 async function updateCustomerById(customer_id, payload) {
-  const data = pickAllowedFields(payload, ALLOWED_UPDATE_FIELDS);
+  // Email disimpan di tabel User, bukan Customer — dipisah sebelum update lokal
+  const { email, ...data } = pickAllowedFields(payload, ALLOWED_UPDATE_FIELDS);
   const runchiseData = pickAllowedFields(data, RUNCHISE_UPDATE_FIELDS);
 
-  if (Object.keys(data).length === 0) {
+  if (!email && Object.keys(data).length === 0) {
     throw new Error("No valid fields to update");
-  }
-
-  if (Object.keys(runchiseData).length === 0) {
-    throw new Error("No valid Runchise fields to update");
   }
 
   try {
     // Find customer
     const customer = await prisma.customer.findUnique({
       where: { customer_id: customer_id },
+      include: { user: { select: { email: true } } },
     });
 
     if (!customer) {
@@ -158,35 +175,84 @@ async function updateCustomerById(customer_id, payload) {
       runchiseData.phone_number = nextPhone;
     }
 
-    if (!customer.runchise_id || !customer.runchise_location_id) {
-      throw new Error(
-        "Customer belum terhubung ke Runchise, tidak bisa update",
+    // Email hanya diupdate di tabel User ketika nilainya berubah; wajib unik
+    const emailChanged = Boolean(email && email !== customer.user.email);
+
+    if (emailChanged) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          user_id: { not: customer.user_id },
+          email: email,
+        },
+        select: { user_id: true },
+      });
+
+      if (existingUser) {
+        throw new Error("Email is already registered");
+      }
+    }
+
+    if (data.owner_location_id !== undefined) {
+      const runchiseLocationId = Number(data.owner_location_id);
+      const location = Number.isInteger(runchiseLocationId)
+        ? await prisma.location.findUnique({
+            where: { runchise_id: runchiseLocationId },
+            select: { location_id: true },
+          })
+        : null;
+
+      if (!location) {
+        throw new Error("Owner location not found");
+      }
+
+      // runchiseData tetap memakai runchise_id untuk API Runchise
+      data.owner_location_id = location.location_id;
+    }
+
+    // Update on runchise database — hanya untuk field yang dikenal Runchise
+    // (update email/dob saja tidak perlu menyentuh Runchise)
+    if (Object.keys(runchiseData).length > 0) {
+      if (!customer.runchise_id || !customer.runchise_location_id) {
+        throw new Error(
+          "Customer belum terhubung ke Runchise, tidak bisa update",
+        );
+      }
+
+      await updateCustomer(
+        customer.runchise_id,
+        customer.runchise_location_id,
+        runchiseData,
       );
     }
 
-    // Update on runchise database
-    const customerRunchise = await updateCustomer(
-      customer.runchise_id,
-      customer.runchise_location_id,
-      runchiseData,
-    );
-
     let updated;
     try {
-      if (phoneChanged) {
+      if (phoneChanged || emailChanged) {
         updated = await prisma.$transaction(async (tx) => {
-          const updatedCustomer = await tx.customer.update({
-            where: { customer_id: customer_id },
-            data,
-          });
+          const updatedCustomer =
+            Object.keys(data).length > 0
+              ? await tx.customer.update({
+                  where: { customer_id: customer_id },
+                  data,
+                })
+              : customer;
 
-          await tx.user.update({
-            where: { user_id: customer.user_id },
-            data: {
+          const userData = {};
+          if (phoneChanged) {
+            Object.assign(userData, {
               phone: nextPhone,
               status: "inactive",
               phone_verified: false,
-            },
+            });
+          }
+          if (emailChanged) {
+            // Email baru menandai verifikasi email ulang
+            Object.assign(userData, { email: email, email_verified: false });
+          }
+
+          await tx.user.update({
+            where: { user_id: customer.user_id },
+            data: userData,
           });
 
           return updatedCustomer;
@@ -211,9 +277,112 @@ async function updateCustomerById(customer_id, payload) {
   }
 }
 
+async function updateCustomerPointHistory(customer_id) {
+  try {
+    if (!customer_id) throw new Error("Customer ID must be required");
+
+    const customer = await prisma.customer.findUnique({
+      where: {
+        customer_id: customer_id,
+      },
+    });
+
+    if (!customer) throw new Error("Customer not found");
+
+    const histories = await getListCustomerPointHistory(customer.runchise_id);
+
+    if (histories.length === 0) return;
+
+    // Insert histories yang belum ada, skip yang sudah ada via unique runchise_id
+    const result = await prisma.customerPointHistory.createMany({
+      data: histories.map((history) => ({
+        customer_id: customer.customer_id,
+        runchise_id: history.id,
+        customer_point_id: history.customer_point_id,
+        point_type: history.point_type,
+        point_snapshot: history.point_snapshot,
+        point: history.point,
+        sale_transaction_uuid: history.sale_transaction_uuid,
+        sale_transaction_id: history.sale_transaction_id,
+        sales_return_id: history.sales_return_id,
+        void_by: history.void_by,
+        void_id: history.void_id,
+        void_reason: history.void_reason ?? "",
+        notes: history.notes ?? "",
+        created_by_id: history.created_by_id,
+        location_id: history.location_id,
+        sales_no: history.sales_no != null ? String(history.sales_no) : null,
+        expired_point: history.expired_point,
+        expired_at: history.expired_at ? new Date(history.expired_at) : null,
+        customer_expired_point_id: history.customer_expired_point_id,
+        customer_order_uuid: history.customer_order_uuid,
+        formatted_created_at: history.formatted_created_at
+          ? new Date(history.formatted_created_at)
+          : null,
+        issued_at_time: history.issued_at_time
+          ? new Date(history.issued_at_time)
+          : null,
+        point_type_description: history.point_type_description,
+        channel: history.channel,
+      })),
+      skipDuplicates: true,
+    });
+
+    return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+async function listCustomerPointHistory(customer_id, query = {}) {
+  if (!customer_id) throw new Error("customer_id is required");
+
+  const {
+    page = 1,
+    limit = 10,
+    point_type,
+    sort_by = "formatted_created_at",
+    sort_order = "desc",
+  } = query;
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+
+  const where = { customer_id };
+  if (point_type) {
+    where.point_type = point_type;
+  }
+
+  try {
+    const [histories, total] = await prisma.$transaction([
+      prisma.customerPointHistory.findMany({
+        where,
+        skip,
+        take,
+        orderBy: sanitizePointHistoryOrderBy(sort_by, sort_order),
+      }),
+      prisma.customerPointHistory.count({ where }),
+    ]);
+
+    return {
+      data: histories,
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        total_pages: Math.ceil(total / Number(limit)),
+      },
+    };
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 module.exports = {
   listAllCustomers,
   getCustomerById,
   getCustomerByUserId,
   updateCustomerById,
+  updateCustomerPointHistory,
+  listCustomerPointHistory,
 };

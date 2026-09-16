@@ -20,6 +20,16 @@ function toNullableString(value) {
   return String(value);
 }
 
+// Response Runchise menyimpan daftar produk per entry send_order_users
+// (per kasir), jadi semua produk digabung menjadi satu array.
+function toProducts(sendOrderUsers) {
+  if (!Array.isArray(sendOrderUsers)) return null;
+  const products = sendOrderUsers.flatMap((user) =>
+    Array.isArray(user?.products) ? user.products : [],
+  );
+  return products.length > 0 ? products : null;
+}
+
 // Satu customer biasanya bertransaksi di sedikit outlet, jadi lookup lokasi
 // di-cache per proses generate agar tidak mem-query Location untuk setiap
 // transaksi.
@@ -52,6 +62,11 @@ function buildSaleTransactionData(customer, location, transaction) {
     net_sales: toNullableFloat(transaction.net_sales),
     location_name: transaction.location_name ?? null,
     order_type_name: transaction.order_type_name ?? null,
+    total_point: toNullableInt(transaction.total_point),
+    earned_point: toNullableInt(transaction.earned_point),
+    redeemed_point: toNullableString(transaction.redeemed_point),
+    available_point: toNullableInt(transaction.available_point),
+    products: toProducts(transaction.send_order_users),
     subtotal: toNullableFloat(transaction.subtotal),
     net_sales_after_tax: toNullableFloat(transaction.net_sales_after_tax),
     sales_time: transaction.sales_time ? new Date(transaction.sales_time) : null,
@@ -133,4 +148,53 @@ async function generateSaleTransactionsFromRunchise(customer_id) {
   return summary;
 }
 
-module.exports = { generateSaleTransactionsFromRunchise };
+// Daftar transaksi penjualan milik satu customer dari tabel lokal (hasil
+// sinkronisasi Runchise), paginated dengan filter outlet dan sorting.
+async function listSaleTransactionsByCustomerId(customer_id, query = {}) {
+  if (!customer_id) throw new Error("customer_id is required");
+
+  const {
+    page = 1,
+    limit = 10,
+    location_id,
+    sort_by = "sales_time",
+    sort_order = "desc",
+  } = query;
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+
+  const where = { customer_id };
+  if (location_id) {
+    where.location_id = location_id;
+  }
+
+  try {
+    const [transactions, total] = await prisma.$transaction([
+      prisma.saleTransaction.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { [sort_by]: sort_order },
+      }),
+      prisma.saleTransaction.count({ where }),
+    ]);
+
+    return {
+      data: transactions,
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        total_pages: Math.ceil(total / Number(limit)),
+      },
+    };
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+module.exports = {
+  generateSaleTransactionsFromRunchise,
+  listSaleTransactionsByCustomerId,
+};
