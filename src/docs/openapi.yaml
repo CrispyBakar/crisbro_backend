@@ -525,6 +525,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/customers/{customer_id}/status:
+    patch:
+      tags: [Customers]
+      summary: Ubah status customer by ID
+      description: >-
+        Status `active` memanggil endpoint unarchive dan `inactive` memanggil
+        endpoint archive di Runchise, lalu status customer diperbarui di
+        database lokal. Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerStatusRequest"
+      responses:
+        "200":
+          description: Status customer diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Body tidak valid atau customer belum terhubung ke Runchise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/customers/user/{user_id}:
     get:
       tags: [Customers]
@@ -677,6 +722,59 @@ paths:
   /api/products:
     get:
       tags: [Products]
+      summary: List produk lokal (paginated)
+      description: Daftar produk hasil sinkronisasi dari Runchise yang tersimpan di database lokal.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: search
+          description: Cari berdasarkan nama atau SKU produk
+          schema:
+            type: string
+            default: ""
+        - in: query
+          name: take
+          description: Jumlah item per halaman (maksimal 100)
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: skip
+          description: Jumlah item yang dilewati
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Daftar produk lokal
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                          total_page:
+                            type: integer
+                          products:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/products/loyalty:
+    get:
+      tags: [Products]
       summary: List loyalty products
       security:
         - bearerAuth: []
@@ -723,6 +821,37 @@ paths:
                               $ref: "#/components/schemas/LoyaltyProduct"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/products/sync-products:
+    post:
+      tags: [Products]
+      summary: Sinkronisasi semua produk dari Runchise
+      description: Mengambil seluruh produk dari Runchise (dengan pagination) lalu menyimpannya (upsert) ke database lokal berdasarkan runchise_id.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: Hasil sinkronisasi produk
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /api/products/sync-loyalty-products:
     post:
@@ -1723,6 +1852,14 @@ components:
       name: crisbar_session
 
   parameters:
+    CsrfToken:
+      in: header
+      name: x-csrf-protection
+      description: Wajib bernilai `1` saat mengautentikasi lewat cookie (cookieAuth); tidak diperlukan saat memakai bearerAuth.
+      schema:
+        type: string
+        enum: ["1"]
+      example: "1"
     PageQuery:
       in: query
       name: page
@@ -2234,6 +2371,57 @@ components:
         gender:
           type: string
           enum: [unknown, male, female]
+
+    CustomerStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, inactive]
+          description: >-
+            `active` untuk unarchive customer di Runchise, `inactive` untuk
+            archive.
+
+    Product:
+      type: object
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        runchise_id:
+          type: integer
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        sku:
+          type: string
+          nullable: true
+        upc:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        internal_price:
+          type: string
+          nullable: true
+        sell_price:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        product_category:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     LoyaltyProduct:
       type: object

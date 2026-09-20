@@ -1,5 +1,8 @@
 const prisma = require("../lib/prisma");
-const { generateLoyaltyProducts } = require("./runchise.service");
+const {
+  generateLoyaltyProducts,
+  getAllProducts,
+} = require("./runchise.service");
 
 async function syncLoyaltyProducts() {
   try {
@@ -27,8 +30,8 @@ async function listLoyaltyProducts({ query, take, skip } = {}) {
     const where = query
       ? {
           OR: [
-            { product_name: { contains: query } },
-            { product_sku: { contains: query } },
+            { product_name: { contains: query, mode: "insensitive" } },
+            { product_sku: { contains: query, mode: "insensitive" } },
           ],
         }
       : undefined;
@@ -53,8 +56,45 @@ async function listLoyaltyProducts({ query, take, skip } = {}) {
   }
 }
 
+async function generateAllProducts() {
+  try {
+    const products = await getAllProducts();
+    return products;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+async function listAllProducts({ search, take, skip }) {
+  try {
+    const where = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { sku: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : undefined;
+
+    const [products, total] = await prisma.$transaction([
+      prisma.products.findMany({ where, take, skip, orderBy: { name: "asc" } }),
+      prisma.products.count({ where }),
+    ]);
+
+    return {
+      total,
+      total_page: take ? Math.ceil(total / take) : 1,
+      products,
+    };
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 module.exports = {
   syncLoyaltyProducts,
   deleteLoyaltyProduct,
   listLoyaltyProducts,
+  generateAllProducts,
+  listAllProducts,
 };

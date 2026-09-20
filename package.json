@@ -37,8 +37,10 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.17.0",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "prisma-erd-generator": "^3.2.1"
   }
 }

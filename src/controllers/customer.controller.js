@@ -10,9 +10,11 @@ const {
   getCustomerByUserId,
   updateCustomerById,
   listCustomerPointHistory,
+  changeStatusCustomer,
 } = require("../services/customer.service");
 const {
   updateCustomerSchema,
+  deactivateCustomerSchema,
 } = require("../validation/customer/customer-validation");
 
 const uuidSchema = z.string().uuid("ID must be a valid UUID");
@@ -183,6 +185,43 @@ async function updateCustomer(req, res) {
   }
 }
 
+async function changeCustomerStatus(req, res) {
+  const idValidation = uuidSchema.safeParse(req.params.customer_id);
+
+  if (!idValidation.success) {
+    return validationError(res, idValidation.error);
+  }
+
+  const bodyValidation = deactivateCustomerSchema.safeParse(req.body ?? {});
+
+  if (!bodyValidation.success) {
+    return validationError(res, bodyValidation.error);
+  }
+
+  try {
+    const customer = await changeStatusCustomer(
+      idValidation.data,
+      bodyValidation.data.status,
+    );
+
+    return successRequest({
+      res,
+      data: customer,
+      message: "Customer status updated successfully.",
+    });
+  } catch (error) {
+    if (error.message === "Customer not found.") {
+      return badRequest({ res, code: 404, error: error.message });
+    }
+
+    if (error.message === "Customer belum terhubung ke Runchise, tidak bisa update") {
+      return badRequest({ res, code: 422, error: error.message });
+    }
+
+    return respondWithServerError(res, error, "Change customer status failed");
+  }
+}
+
 async function getMyCustomer(req, res) {
   try {
     const customer = await getCustomerByUserId(req.user.user_id);
@@ -335,6 +374,7 @@ module.exports = {
   getCustomer,
   getCustomerByUser,
   updateCustomer,
+  changeCustomerStatus,
   getMyCustomer,
   updateMyCustomer,
   getCustomerPointHistory,

@@ -8,6 +8,7 @@ const {
 } = require("../validation/runchise/runchise-validation");
 const {
   updateCustomerSchema,
+  deactivateCustomerSchema,
 } = require("../validation/customer/customer-validation");
 const { generateRandomUniqueCode } = require("../utils/generateReferralCode");
 
@@ -94,6 +95,79 @@ async function updateCustomer(
     );
 
     return result.data?.customer ?? null;
+  } catch (error) {
+    console.log(error.response.data);
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message
+        ? JSON.stringify(error.response.data.message)
+        : error.message;
+      throw new Error(message);
+    }
+    throw error;
+  }
+}
+
+async function activateCustomer(
+  runchise_customer_id,
+  runchise_location_id,
+  status,
+) {
+  try {
+    const validate = deactivateCustomerSchema.safeParse(status);
+
+    if (!validate.success) {
+      throw new Error(JSON.stringify(validate.error.flatten().fieldErrors));
+    }
+
+    const data = validate.data;
+
+    if (data.status !== "active") {
+      throw new Error("Status harus active");
+    }
+
+    const result = await runchiseClient.patch(
+      `/locations/${runchise_location_id}/customers/${runchise_customer_id}/unarchive`,
+    );
+
+    return true;
+  } catch (error) {
+    console.log(error.response.data);
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message
+        ? JSON.stringify(error.response.data.message)
+        : error.message;
+      throw new Error(message);
+    }
+    throw error;
+  }
+}
+
+async function deactivateCustomer(
+  runchise_customer_id,
+  runchise_location_id,
+  status,
+) {
+  try {
+    const validate = deactivateCustomerSchema.safeParse(status);
+
+    if (!validate.success) {
+      throw new Error(JSON.stringify(validate.error.flatten().fieldErrors));
+    }
+
+    const data = validate.data;
+
+    if (data.status !== "inactive") {
+      throw new Error("Status harus inactive");
+    }
+
+    console.log(runchise_location_id);
+    console.log(runchise_customer_id);
+
+    const result = await runchiseClient.patch(
+      `/locations/${runchise_location_id}/customers/${runchise_customer_id}/archive`,
+    );
+
+    return true;
   } catch (error) {
     console.log(error.response.data);
     if (axios.isAxiosError(error)) {
@@ -626,10 +700,69 @@ async function getListCustomerPointHistory(runchise_customer_id) {
   }
 }
 
+async function getAllProducts() {
+  try {
+    let next_page = undefined;
+    const products = [];
+
+    do {
+      let res;
+
+      if (!next_page) {
+        res = await runchiseClient.get(`/products`);
+      } else {
+        const afterPublic = next_page.split("/public")[1];
+        res = await runchiseClient.get(afterPublic);
+      }
+
+      const result = res.data;
+
+      // Sync products to local database
+      for (const product of result.products) {
+        const data = {
+          runchise_id: product.id,
+          name: product.name,
+          sku: product.sku,
+          upc: product.upc,
+          description: product.description,
+          internal_price: product.internal_price,
+          sell_price: product.sell_price,
+          status: product.status,
+          product_category: product.product_category?.name ?? null,
+          image_url: product.image_url ?? "",
+        };
+
+        const syncedProduct = await prisma.products.upsert({
+          where: { runchise_id: product.id },
+          update: data,
+          create: data,
+        });
+
+        products.push(syncedProduct);
+      }
+
+      next_page = result.paging.next_page;
+    } while (next_page);
+
+    return products;
+  } catch (error) {
+    const message = error.response?.data?.errors
+      ? JSON.stringify(error.response.data.errors)
+      : error.message;
+    throw Object.assign(new Error(message, { cause: error }), {
+      code: "RUNCHISE_REQUEST_FAILED",
+      statusCode: 502,
+    });
+  }
+  throw error;
+}
+
 module.exports = {
   findCustomerByPhone,
   createCustomer,
   updateCustomer,
+  activateCustomer,
+  deactivateCustomer,
   listAllLocations,
   listAllSubBrands,
   listSaleTransactionByCustomerId,
@@ -644,4 +777,5 @@ module.exports = {
   getPromo,
   getListSaleTransactionSummary,
   getListCustomerPointHistory,
+  getAllProducts,
 };

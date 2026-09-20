@@ -5,9 +5,25 @@ const {
   listLoyaltyProductsController,
   syncLoyaltyProductsController,
   deleteLoyaltyProductController,
+  syncProductsController,
+  listAllProductsController,
 } = require("../controllers/product.controller");
 
-router.get("/", auth, listLoyaltyProductsController);
+router.get(
+  "/",
+  auth,
+  requireRole("admin", "marketing"),
+  listAllProductsController,
+);
+
+router.get("/loyalty", auth, listLoyaltyProductsController);
+
+router.post(
+  "/sync-products",
+  auth,
+  requireRole("admin", "marketing"),
+  syncProductsController,
+);
 
 router.post(
   "/sync-loyalty-products",

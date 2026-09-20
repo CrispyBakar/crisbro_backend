@@ -3,6 +3,8 @@ const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
 const {
   updateCustomer,
   getListCustomerPointHistory,
+  activateCustomer,
+  deactivateCustomer,
 } = require("./runchise.service");
 
 const ALLOWED_SORT_FIELDS = ["created_at", "name", "phone_number", "status"];
@@ -378,6 +380,41 @@ async function listCustomerPointHistory(customer_id, query = {}) {
   }
 }
 
+async function changeStatusCustomer(customer_id, status) {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { customer_id: customer_id },
+    });
+
+    if (!customer) throw new Error("Customer not found.");
+
+    if (!customer.runchise_id || !customer.runchise_location_id) {
+      throw new Error(
+        "Customer belum terhubung ke Runchise, tidak bisa update",
+      );
+    }
+
+    // activateCustomer/deactivateCustomer memvalidasi payload object { status } via zod
+    if (status === "active") {
+      await activateCustomer(customer.runchise_id, customer.runchise_location_id, {
+        status,
+      });
+    } else {
+      await deactivateCustomer(customer.runchise_id, customer.runchise_location_id, {
+        status,
+      });
+    }
+
+    // Sinkronkan status ke DB lokal setelah Runchise berhasil
+    return prisma.customer.update({
+      where: { customer_id: customer_id },
+      data: { status },
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 module.exports = {
   listAllCustomers,
   getCustomerById,
@@ -385,4 +422,5 @@ module.exports = {
   updateCustomerById,
   updateCustomerPointHistory,
   listCustomerPointHistory,
+  changeStatusCustomer,
 };

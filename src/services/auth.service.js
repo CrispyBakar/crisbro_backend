@@ -141,13 +141,19 @@ async function registerUser(data) {
       },
     });
 
-    await tx.customer.create({
-      data: buildLocalCustomerData(
-        remoteCustomer,
-        createdUser.user_id,
-        data.phone,
-      ),
+    const customerLocal = await tx.customer.findFirst({
+      where: { phone_number: data.phone },
     });
+
+    if (!customerLocal) {
+      await tx.customer.create({
+        data: buildLocalCustomerData(
+          remoteCustomer,
+          createdUser.user_id,
+          data.phone,
+        ),
+      });
+    }
 
     let createdReferralRecord = [];
     if (referralData) {
