@@ -2,6 +2,8 @@ const {
   syncLoyaltyProducts,
   deleteLoyaltyProduct,
   listLoyaltyProducts,
+  listAllProducts,
+  generateAllProducts,
 } = require("../services/product.service");
 const { successRequest, badRequest } = require("../utils/responseReuest");
 
@@ -28,6 +30,34 @@ async function listLoyaltyProductsController(req, res) {
     return badRequest({
       res,
       code: 500,
+      error: error.message,
+    });
+  }
+}
+
+async function listAllProductsController(req, res) {
+  try {
+    const { search = "", skip = 0, take = 10 } = req.query;
+
+    const parsedTake = Math.min(Number.parseInt(take, 10) || 10, 100);
+    const parsedSkip = Math.max(Number.parseInt(skip, 10) || 0, 0);
+
+    const products = await listAllProducts({
+      search,
+      skip: parsedSkip,
+      take: parsedTake,
+    });
+
+    return successRequest({
+      res,
+      code: 200,
+      message: "Products retrieved successfully",
+      data: products,
+    });
+  } catch (error) {
+    return badRequest({
+      code: 500,
+      res,
       error: error.message,
     });
   }
@@ -81,8 +111,29 @@ async function deleteLoyaltyProductController(req, res) {
   }
 }
 
+async function syncProductsController(req, res) {
+  try {
+    const products = await generateAllProducts();
+
+    return successRequest({
+      res,
+      code: 200,
+      message: "Products synced successfully",
+      data: products,
+    });
+  } catch (error) {
+    return badRequest({
+      res,
+      code: 500,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   listLoyaltyProductsController,
   syncLoyaltyProductsController,
   deleteLoyaltyProductController,
+  syncProductsController,
+  listAllProductsController,
 };

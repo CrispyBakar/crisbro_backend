@@ -11,6 +11,11 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+generator erd {
+  provider = "prisma-erd-generator"
+  output   = "../prisma/crisbro_erd.svg"
+}
+
 enum Role {
   admin
   marketing
@@ -417,6 +422,25 @@ model CustomerPointHistory {
 
   @@index(runchise_id)
   @@index(customer_id)
+}
+
+model Products {
+  product_id      String  @id   @default(uuid())
+  runchise_id     Int?    @unique
+  name            String? 
+  sku             String?
+  upc             String?
+  description     String?
+  internal_price  String?
+  sell_price      String?
+  status          String?
+  product_category  String?
+  image_url       String?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+
+  @@index(runchise_id)
+  @@index(name)
 }
 
 enum JobCategory {

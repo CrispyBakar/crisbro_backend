@@ -6,6 +6,7 @@ const {
   getCustomer,
   getCustomerByUser,
   updateCustomer,
+  changeCustomerStatus,
   getMyCustomer,
   updateMyCustomer,
   getCustomerPointHistory,
@@ -25,6 +26,11 @@ router.get("/", adminOrMarketing, listCustomers);
 router.get("/user/:user_id", adminOrMarketing, getCustomerByUser);
 router.get("/:customer_id", adminOrMarketing, getCustomer);
 router.patch("/:customer_id", adminOrMarketing, updateCustomer);
+router.patch(
+  "/:customer_id/status",
+  adminOrMarketing,
+  changeCustomerStatus,
+);
 router.get("/:customer_id/point-history", adminOrMarketing, getCustomerPointHistory);
 
 module.exports = router;
