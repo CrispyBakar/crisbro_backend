@@ -860,6 +860,8 @@ paths:
       security:
         - bearerAuth: []
         - cookieAuth: []
+      parameters:
+      - $ref: "#/components/parameters/CsrfToken"
       responses:
         "200":
           description: Hasil sinkronisasi loyalty products

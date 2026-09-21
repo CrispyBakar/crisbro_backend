@@ -289,6 +289,10 @@ model LoyaltyProduct {
   product_location_ids          String[]
   created_at                    DateTime @default(now())
   updated_at                    DateTime  @updatedAt
+
+  @@index(runchise_loyalty_product_id)
+  @@index(runchise_product_id)
+  @@index(product_name)
 }
 
 model Promo {
