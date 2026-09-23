@@ -119,7 +119,7 @@ model Referral {
 
 model Customer {
   customer_id               String    @id @default(uuid())
-  user_id                   String    @unique
+  user_id                   String?    @unique
   runchise_id               Int?      @unique
   runchise_location_id      Int?
   runchise_synced_at        DateTime?
@@ -147,7 +147,7 @@ model Customer {
   
 
   // Relations
-  user            User      @relation("UserToCustomer", fields: [user_id], references: [user_id])
+  user            User?      @relation("UserToCustomer", fields: [user_id], references: [user_id])
   owner_location  Location? @relation(fields: [owner_location_id], references: [location_id])
   created_by      User?     @relation("CreatedBy", fields: [created_by_id], references: [user_id])
   last_updated_by User?     @relation("LastUpdatedBy", fields: [last_updated_by_id], references: [user_id])
@@ -198,6 +198,7 @@ model Location {
   updated_at       DateTime @updatedAt
 
   customers Customer[]
+  saleTransaction SaleTransaction[]
 }
 
 model MenuCategory {
@@ -235,7 +236,7 @@ model RewardsCatalog {
 model SaleTransaction {
   transaction_id                String    @id @default(uuid())
   customer_id                   String
-  location_id                   String
+  location_id                   String?
   runchise_id                   Int?      @unique
   runchise_brand_id             Int?
   runchise_sales_no             String?
@@ -254,12 +255,16 @@ model SaleTransaction {
   net_sales_after_tax           Float?
   sales_time                    DateTime?
   note                          String?
-  applied_promos_redeemed_point Int?
+  applied_promos_redeemed_point String?
   loyalty_discount_fee          Float?
   created_at                    DateTime?
   updated_at                    DateTime?
 
   customer Customer @relation(fields: [customer_id], references: [customer_id])
+  location Location? @relation(fields: [location_id], references: [location_id])
+
+  @@index(location_id)
+  @@index(runchise_id)
 }
 
 model Token {

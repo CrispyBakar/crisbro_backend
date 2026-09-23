@@ -149,6 +149,15 @@ const workerDaily = new Worker(
       await prisma.customer.update({
         where: { customer_id: customer.customer_id },
         data: {
+          name: runchiseCustomer.name,
+          phone_number: runchiseCustomer.phone_number,
+          address: runchiseCustomer.address,
+          balance: runchiseCustomer.balance,
+          province: runchiseCustomer.province,
+          city: runchiseCustomer.city,
+          country: runchiseCustomer.country,
+          postal_code: runchiseCustomer.postal_code,
+          gender: runchiseCustomer.gender,
           runchise_id: runchiseCustomer.id,
           available_point: runchiseCustomer.available_point,
           total_point: runchiseCustomer.total_point,

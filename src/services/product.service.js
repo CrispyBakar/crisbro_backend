@@ -25,16 +25,23 @@ async function deleteLoyaltyProduct(loyalty_product_id) {
   }
 }
 
-async function listLoyaltyProducts({ query, take, skip } = {}) {
+async function listLoyaltyProducts({ query, location_id, take, skip } = {}) {
   try {
-    const where = query
-      ? {
-          OR: [
-            { product_name: { contains: query, mode: "insensitive" } },
-            { product_sku: { contains: query, mode: "insensitive" } },
-          ],
-        }
-      : undefined;
+    const where = {};
+
+    if (location_id) {
+      where.OR = [
+        { location_ids: { has: location_id } },
+        { is_select_all_location: true },
+      ];
+    }
+
+    if (query) {
+      where.OR = [
+        { product_name: { contains: query, mode: "insensitive" } },
+        { product_sku: { contains: query, mode: "insensitive" } },
+      ];
+    }
 
     const [total, loyalty_products] = await prisma.$transaction([
       prisma.loyaltyProduct.count({ where }),

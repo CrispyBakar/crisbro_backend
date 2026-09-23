@@ -46,6 +46,8 @@ function buildLocalCustomerData(remoteCustomer, userId, fallbackPhone) {
       fallbackPhone,
     total_point: remoteCustomer.total_point ?? 0,
     available_point: remoteCustomer.available_point ?? 0,
+    created_at: new Date(remoteCustomer.created_at ?? Date.now()),
+    updated_at: new Date(remoteCustomer.updated_at),
   };
 }
 
@@ -205,7 +207,7 @@ async function registerUser(data) {
   });
 
   // Generate no reference for activation user
-  noRef = generateRandomUniqueCode(10);
+  const noRef = generateRandomUniqueCode(10);
 
   let code;
   let exist = true;
@@ -253,7 +255,7 @@ async function sendUserReferenceCode(userId) {
   const user = await prisma.user.findUnique({ where: { user_id: userId } });
   if (!user) throw new AuthServiceError(404, "User not found");
 
-  noRef = generateRandomUniqueCode(10);
+  const noRef = generateRandomUniqueCode(10);
 
   let code;
   let exist = true;
@@ -468,4 +470,5 @@ module.exports = {
   authenticateUser,
   getUserProfile,
   changeUserPassword,
+  buildLocalCustomerData,
 };
