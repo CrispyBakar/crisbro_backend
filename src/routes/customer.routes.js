@@ -11,8 +11,10 @@ const {
   updateMyCustomer,
   getCustomerPointHistory,
   getMyPointHistory,
+  generateCustomers,
 } = require("../controllers/customer.controller");
 
+const adminOnly = requireRole("admin");
 const adminOrMarketing = requireRole("admin", "marketing");
 const customerOnly = requireRole("customer");
 
@@ -23,6 +25,10 @@ router.patch("/me", customerOnly, updateMyCustomer);
 router.get("/me/point-history", customerOnly, getMyPointHistory);
 
 router.get("/", adminOrMarketing, listCustomers);
+
+// POST /api/customers/generate — tarik seluruh customer berpoin dari Runchise
+// ke tabel lokal. Khusus admin karena memengaruhi data customer global.
+router.post("/generate", adminOnly, generateCustomers);
 router.get("/user/:user_id", adminOrMarketing, getCustomerByUser);
 router.get("/:customer_id", adminOrMarketing, getCustomer);
 router.patch("/:customer_id", adminOrMarketing, updateCustomer);

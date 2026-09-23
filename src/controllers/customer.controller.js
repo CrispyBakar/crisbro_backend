@@ -11,6 +11,7 @@ const {
   updateCustomerById,
   listCustomerPointHistory,
   changeStatusCustomer,
+  generateAllCustomerRunchise,
 } = require("../services/customer.service");
 const {
   updateCustomerSchema,
@@ -369,6 +370,25 @@ async function getMyPointHistory(req, res) {
   }
 }
 
+// Menarik seluruh customer berpoin dari Runchise lalu menyimpannya ke tabel
+// Customer lokal. Proses bisa berjalan lama karena menarik banyak halaman
+// dari API Runchise; ringkasan hasil dikembalikan pada response.
+async function generateCustomers(req, res) {
+  try {
+    const summary = await generateAllCustomerRunchise();
+
+    return successRequest({
+      res,
+      data: summary,
+      message: "Customers berhasil digenerate dari Runchise.",
+    });
+  } catch (error) {
+    // Kegagalan umumnya berasal dari API Runchise (timeout/network) atau
+    // database; context generate memudahkan pelacakan di log.
+    return respondWithServerError(res, error, "Generate customers failed");
+  }
+}
+
 module.exports = {
   listCustomers,
   getCustomer,
@@ -379,4 +399,5 @@ module.exports = {
   updateMyCustomer,
   getCustomerPointHistory,
   getMyPointHistory,
+  generateCustomers,
 };

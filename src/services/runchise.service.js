@@ -16,7 +16,7 @@ dotenv.config();
 
 const runchiseClient = axios.create({
   baseURL: "https://runchise-api.crispybakar.biz/api/public",
-  timeout: 15000, // 15 detik
+  timeout: 60000, // 60 detik
   headers: {
     Accept: "application/json",
     Authorization: process.env.RUNCHISE_API_KEY,
@@ -50,6 +50,52 @@ async function findCustomerByPhone({ phone }) {
   }
 
   return null;
+}
+
+async function generateAllCustomerHasPoint() {
+  try {
+    const locationIds = await findAllLocationIds();
+    const customers = [];
+
+    for (let i = 0; i < locationIds.length; i++) {
+      let next_page = undefined;
+      let currentCustomers = [];
+      const res = await runchiseClient.get(
+        `/locations/${locationIds[i]}/customers?item_per_page=1000`,
+      );
+
+      const data = res.data?.customers;
+      currentCustomers.push(...data);
+      next_page = res.data?.paging?.next_page ?? null;
+
+      while (next_page) {
+        const [_, url] = next_page.split("/public/");
+        const nextRes = await runchiseClient.get(`${url}&item_per_page=1000`);
+        const data = nextRes.data?.customers;
+
+        currentCustomers.push(...data);
+        next_page = nextRes.data?.paging?.next_page ?? null;
+
+        // Jeda 5 detik setelah berhasil fetch setiap halaman berikutnya
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+
+      customers.push(...currentCustomers);
+    }
+
+    const customerFilter = customers.filter((v) => Number(v.total_point) > 0);
+
+    return customerFilter;
+  } catch (error) {
+    console.log(error);
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message
+        ? JSON.stringify(error.response.data.message)
+        : error.message;
+      throw new Error(message);
+    }
+    throw error;
+  }
 }
 
 async function createCustomer(payload) {
@@ -160,9 +206,6 @@ async function deactivateCustomer(
       throw new Error("Status harus inactive");
     }
 
-    console.log(runchise_location_id);
-    console.log(runchise_customer_id);
-
     const result = await runchiseClient.patch(
       `/locations/${runchise_location_id}/customers/${runchise_customer_id}/archive`,
     );
@@ -254,7 +297,7 @@ async function listSaleTransactionByCustomerId(runchise_customer_id) {
       throw new Error("Runchise Customer Id is required");
 
     let response = await runchiseClient.get(
-      `/sale_transactions?customer_id=${runchise_customer_id}`,
+      `/sale_transactions?customer_id=${runchise_customer_id}&item_per_page=1000`,
     );
 
     let paging = response.data.paging;
@@ -330,7 +373,7 @@ async function generateLoyaltyProducts() {
     // Selected loyalties is active
     const activeLoyalties = loyalties.filter((loyalty) => loyalty.is_active);
 
-    const products = [];
+    const productsData = [];
     for (const loyalty_product of activeLoyalties.at(0)?.loyalty_products ??
       []) {
       const product_locations = await Promise.all(
@@ -354,40 +397,32 @@ async function generateLoyaltyProducts() {
       const product_location_ids = product_locations.filter(Boolean);
       const location_ids_filtered = location_ids.filter(Boolean);
 
-      const product = await prisma.loyaltyProduct.upsert({
-        where: { runchise_loyalty_product_id: loyalty_product.id },
-        update: {
-          runchise_loyalty_product_id: loyalty_product.id,
-          runchise_product_id: loyalty_product.product_id,
-          point_needed: loyalty_product.point_needed,
-          product_name: loyalty_product.product_name,
-          product_sku: loyalty_product.product_sku,
-          product_description: loyalty_product.product_description,
-          product_image_url: loyalty_product.product_image_url,
-          product_unit_name: loyalty_product.product_unit_name,
-          max_redeem: loyalty_product.max_redeem,
-          is_select_all_location: loyalty_product.is_select_all_location,
-          location_ids: location_ids_filtered,
-          product_location_ids: product_location_ids,
-        },
-        create: {
-          runchise_loyalty_product_id: loyalty_product.id,
-          runchise_product_id: loyalty_product.product_id,
-          point_needed: loyalty_product.point_needed,
-          product_name: loyalty_product.product_name,
-          product_sku: loyalty_product.product_sku,
-          product_description: loyalty_product.product_description,
-          product_image_url: loyalty_product.product_image_url,
-          product_unit_name: loyalty_product.product_unit_name,
-          max_redeem: loyalty_product.max_redeem,
-          is_select_all_location: loyalty_product.is_select_all_location,
-          location_ids: location_ids_filtered,
-          product_location_ids: product_location_ids,
-        },
+      productsData.push({
+        runchise_loyalty_product_id: loyalty_product.id,
+        runchise_product_id: loyalty_product.product_id,
+        point_needed: loyalty_product.point_needed,
+        product_name: loyalty_product.product_name,
+        product_sku: loyalty_product.product_sku,
+        product_description: loyalty_product.product_description,
+        product_image_url: loyalty_product.product_image_url,
+        product_unit_name: loyalty_product.product_unit_name,
+        max_redeem: loyalty_product.max_redeem,
+        is_select_all_location: loyalty_product.is_select_all_location,
+        location_ids: location_ids_filtered,
+        product_location_ids: product_location_ids,
       });
-
-      products.push(product);
     }
+
+    // Runchise can change loyalty product ids when updating the loyalty
+    // program, so rebuild from scratch instead of upserting
+    const products = await prisma.$transaction(async (tx) => {
+      await tx.loyaltyProduct.deleteMany({});
+      await tx.loyaltyProduct.createMany({ data: productsData });
+
+      return tx.loyaltyProduct.findMany({
+        orderBy: { runchise_loyalty_product_id: "asc" },
+      });
+    });
 
     return products;
   } catch (error) {
@@ -492,7 +527,7 @@ async function activatePromo(runchise_promo_id) {
 
 async function generatePromoCode({ runchise_promo_id, total_code }) {
   try {
-    const { z } = require("zod");
+    const { z, custom } = require("zod");
     const input = z
       .object({
         runchise_promo_id: z.number().int().positive(),
@@ -659,6 +694,28 @@ async function getListSaleTransactionSummary(lastIdsByLocation = {}) {
   return { sale_transactions, lastIdsByLocation: updatedLastIds };
 }
 
+async function getDetailSaleTransaction(runchise_sale_transaction_id) {
+  try {
+    const response = await runchiseClient.get(
+      `/sale_transactions/${runchise_sale_transaction_id}`,
+    );
+    const data = response.data;
+
+    return data.sale_transaction;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.errors
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      throw Object.assign(new Error(message, { cause: error }), {
+        code: "RUNCHISE_REQUEST_FAILED",
+        statusCode: 502,
+      });
+    }
+    throw error;
+  }
+}
+
 async function getListCustomerPointHistory(runchise_customer_id) {
   try {
     let has_more = true;
@@ -754,7 +811,6 @@ async function getAllProducts() {
       statusCode: 502,
     });
   }
-  throw error;
 }
 
 module.exports = {
@@ -778,4 +834,6 @@ module.exports = {
   getListSaleTransactionSummary,
   getListCustomerPointHistory,
   getAllProducts,
+  generateAllCustomerHasPoint,
+  getDetailSaleTransaction,
 };

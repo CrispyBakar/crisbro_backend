@@ -52,6 +52,8 @@ function buildCustomerUpdateFromRunchise(
       localCustomer.available_point,
       awardedPoints,
     ),
+    created_at: new Date(remoteCustomer.created_at ?? Date.now()),
+    updated_at: new Date(remoteCustomer.updated_at),
   };
 }
 

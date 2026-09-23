@@ -6,6 +6,7 @@ const {
 } = require("../utils/responseReuest");
 const {
   generateSaleTransactionsFromRunchise,
+  generateAllSaleTransactionsFromRunchise,
   listSaleTransactionsByCustomerId,
 } = require("../services/saleTransaction.service");
 const { getCustomerById } = require("../services/customer.service");
@@ -66,6 +67,31 @@ async function generateSaleTransactions(req, res) {
   }
 }
 
+// Menarik sale transaction seluruh customer tersinkon Runchise lalu
+// menyimpannya (upsert) ke tabel SaleTransaction lokal. Kegagalan per
+// customer tidak menghentikan proses dan dilaporkan pada ringkasan balasan.
+// Proses bisa berjalan sangat lama karena memanggil API Runchise untuk
+// setiap customer.
+async function generateAllSaleTransactions(req, res) {
+  try {
+    const summary = await generateAllSaleTransactionsFromRunchise();
+
+    return successRequest({
+      res,
+      data: summary,
+      message: "Sale transactions seluruh customer berhasil digenerate dari Runchise.",
+    });
+  } catch (error) {
+    // Kegagalan umumnya berasal dari API Runchise (timeout/network) atau
+    // database; context generate memudahkan pelacakan di log.
+    return respondWithServerError(
+      res,
+      error,
+      "Generate all sale transactions failed",
+    );
+  }
+}
+
 // Daftar transaksi penjualan milik satu customer dari tabel lokal hasil
 // sinkronisasi Runchise. Khusus admin dan marketing.
 async function getSaleTransactionsByCustomer(req, res) {
@@ -107,4 +133,8 @@ async function getSaleTransactionsByCustomer(req, res) {
   }
 }
 
-module.exports = { generateSaleTransactions, getSaleTransactionsByCustomer };
+module.exports = {
+  generateSaleTransactions,
+  generateAllSaleTransactions,
+  getSaleTransactionsByCustomer,
+};

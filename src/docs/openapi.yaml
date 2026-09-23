@@ -382,6 +382,43 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /api/customers/generate:
+    post:
+      tags: [Customers]
+      summary: Sinkronisasi seluruh customer berpoin dari Runchise
+      description: >-
+        Menarik seluruh customer dengan `total_point` > 0 dari semua lokasi
+        Runchise lalu menyimpannya ke tabel Customer lokal. Idempoten: customer
+        dikenali lewat `runchise_id`, sedangkan customer lokal milik user
+        terdaftar yang belum terhubung Runchise diadopsi lewat kecocokan nomor
+        telepon sehingga pemanggilan berulang tidak menduplikasi data. Customer
+        baru yang nomornya sudah terdaftar sebagai user lokal langsung
+        terhubung ke user tersebut. Proses dapat berjalan lama karena menarik
+        banyak halaman dari API Runchise. Khusus admin.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: Ringkasan hasil sinkronisasi customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomerGenerateSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/customers/me:
     get:
       tags: [Customers]
@@ -787,6 +824,12 @@ paths:
             type: string
             default: ""
         - in: query
+          name: location_id
+          description: Cari berdasarkan location id yang tercantum
+          schema:
+            type: string
+            default: ""
+        - in: query
           name: take
           description: Jumlah item per halaman (maksimal 100)
           schema:
@@ -861,7 +904,7 @@ paths:
         - bearerAuth: []
         - cookieAuth: []
       parameters:
-      - $ref: "#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/CsrfToken"
       responses:
         "200":
           description: Hasil sinkronisasi loyalty products
@@ -1747,6 +1790,8 @@ paths:
       security:
         - bearerAuth: []
         - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
       requestBody:
         required: true
         content:
@@ -1788,6 +1833,48 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "429":
           description: Terlalu banyak permintaan generate untuk customer yang sama
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/sale-transactions/generate-all:
+    post:
+      tags: [Sale Transactions]
+      summary: Tarik sale transactions seluruh customer dari Runchise
+      description: >-
+        Menarik seluruh sale transaction milik semua customer yang sudah
+        tersinkron dengan Runchise (runchise_id terisi) lalu menyimpannya ke
+        tabel SaleTransaction lokal (upsert by runchise_id, idempoten).
+        Inkremental: transaksi yang sudah tersimpan tidak ditarik ulang
+        detailnya dari Runchise (detail transaksi adalah snapshot saat
+        penjualan), sehingga pemanggilan berikutnya hanya memproses transaksi
+        baru. Panggilan API Runchise dijalankan konkuren (maksimal 5 paralel).
+        Kegagalan per customer tidak menghentikan customer lain dan dilaporkan
+        pada errors di ringkasan balasan. Rate limit: 2 permintaan/IP/10 menit.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: Ringkasan hasil generate seluruh customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SaleTransactionGenerateAllSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          description: Terlalu banyak permintaan generate seluruh sale transaction
           content:
             application/json:
               schema:
@@ -2677,7 +2764,16 @@ components:
 
     PromoCreateRequest:
       type: object
-      required: [channel, name, goal, start_date, owner_location_id, promo_rule_attributes, promo_reward_attributes]
+      required:
+        [
+          channel,
+          name,
+          goal,
+          start_date,
+          owner_location_id,
+          promo_rule_attributes,
+          promo_reward_attributes,
+        ]
       properties:
         channel:
           type: string
@@ -3153,6 +3249,74 @@ components:
           type: integer
         skipped_location_not_found:
           type: integer
+
+    SaleTransactionGenerateAllSummary:
+      type: object
+      properties:
+        total_customers:
+          type: integer
+          description: Jumlah customer tersinkon Runchise yang diproses
+        processed:
+          type: integer
+          description: Jumlah customer yang berhasil diproses
+        failed:
+          type: integer
+          description: Jumlah customer yang gagal diproses
+        total_fetched:
+          type: integer
+          description: Jumlah transaksi yang diterima dari Runchise (semua customer)
+        upserted:
+          type: integer
+          description: Jumlah transaksi yang dibuat/diperbarui di database lokal
+        skipped_missing_runchise_id:
+          type: integer
+        skipped_location_not_found:
+          type: integer
+        skipped_already_synced:
+          type: integer
+          description: >-
+            Jumlah transaksi yang dilewati karena sudah tersimpan di database
+            lokal (tidak ditarik ulang dari Runchise)
+        errors:
+          type: array
+          description: Detail kegagalan per customer
+          items:
+            type: object
+            properties:
+              customer_id:
+                type: string
+                format: uuid
+              message:
+                type: string
+
+    CustomerGenerateSummary:
+      type: object
+      properties:
+        total_fetched:
+          type: integer
+          description: Jumlah customer berpoin yang diterima dari Runchise
+        created:
+          type: integer
+          description: Jumlah customer baru yang dibuat di database lokal
+        updated:
+          type: integer
+          description: Jumlah customer yang diperbarui/diadopsi di database lokal
+        failed:
+          type: integer
+          description: Jumlah customer yang gagal disimpan
+        missing_location:
+          type: integer
+          description: Jumlah customer dengan lokasi Runchise yang belum tersinkron
+        errors:
+          type: array
+          description: Detail kegagalan per customer
+          items:
+            type: object
+            properties:
+              runchise_id:
+                type: integer
+              message:
+                type: string
 
     SaleTransaction:
       type: object

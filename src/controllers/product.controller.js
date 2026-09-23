@@ -9,13 +9,14 @@ const { successRequest, badRequest } = require("../utils/responseReuest");
 
 async function listLoyaltyProductsController(req, res) {
   try {
-    const { query = "", take = 10, skip = 0 } = req.query;
+    const { query = "", location_id, take = 10, skip = 0 } = req.query;
 
     const parsedTake = Math.min(Number.parseInt(take, 10) || 10, 100);
     const parsedSkip = Math.max(Number.parseInt(skip, 10) || 0, 0);
 
     const result = await listLoyaltyProducts({
       query,
+      location_id,
       take: parsedTake,
       skip: parsedSkip,
     });

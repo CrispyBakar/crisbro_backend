@@ -191,6 +191,17 @@ const saleTransactionGenerateLimiter = createDedicatedLimiter({
   keyGenerator: saleTransactionTargetKey,
 });
 
+// Generate-all menarik transaksi SELURUH customer sekaligus, jauh lebih berat
+// daripada generate per customer. Jendela lebih panjang dan kuota jauh lebih
+// kecil (per IP) agar API Runchise tidak dibanjiri pemanggilan berulang.
+const saleTransactionGenerateAllLimiter = createDedicatedLimiter({
+  prefix: "sale-transaction-generate-all",
+  windowMs: 10 * 60 * 1000,
+  max: 2,
+  message:
+    "Terlalu banyak permintaan generate seluruh sale transaction. Silakan coba lagi nanti.",
+});
+
 // Outlet options are used by the report filter and perform a distinct scan;
 // keep repeated polling from turning that endpoint into an unbounded read.
 const reportOutletsLimiter = createDedicatedLimiter({
@@ -231,6 +242,7 @@ module.exports = {
   resendActivationTargetLimiter,
   runchiseSyncTargetLimiter,
   saleTransactionGenerateLimiter,
+  saleTransactionGenerateAllLimiter,
   reportOutletsLimiter,
   shouldSkipGlobalLimiter,
 };
