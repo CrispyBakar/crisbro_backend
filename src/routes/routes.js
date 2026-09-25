@@ -9,6 +9,7 @@ const subBrandRoutes = require("./subBrand.routes");
 const webhookQontak = require("./qontak.routes");
 const productRoutes = require("./product.routes");
 const promoRoutes = require("./promo.routes");
+const dashboardRoutes = require("./dashboard.routes");
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use("/referral", referralRoutes);
 router.use("/locations", locationRoutes);
 router.use("/sub_brands", subBrandRoutes);
 router.use("/webhook-qontak", webhookQontak);
+router.use("/dashboard", dashboardRoutes);
 
 module.exports = router;

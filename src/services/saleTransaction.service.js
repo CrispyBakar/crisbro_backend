@@ -1,5 +1,11 @@
+const axios = require("axios");
+const { Prisma } = require("@prisma/client");
 const prisma = require("../lib/prisma");
 const { withDbRetry } = require("../lib/dbRetry");
+const {
+  withDistributedCronLock,
+  RUNCHISE_CRON_LOCK_IDS,
+} = require("../lib/distributedCronLock");
 const {
   listSaleTransactionByCustomerId,
   getDetailSaleTransaction,
@@ -53,6 +59,21 @@ function createLocationCache() {
   };
 }
 
+// Data poin loyalty dikirim Runchise di dalam `metadata`, bukan di level
+// atas transaksi. Transaksi tanpa program loyalty (mis. order Shopee
+// Integrasi) tidak memiliki field ini sama sekali sehingga tersimpan NULL.
+function toPointData(transaction) {
+  const metadata = transaction.metadata ?? {};
+  return {
+    // metadata.loyalty hanya ada bila transaksi mengikuti program loyalty.
+    point_from_transaction: toNullableInt(metadata.loyalty?.point),
+    total_point: toNullableInt(metadata.total_point),
+    earned_point: toNullableInt(metadata.earned_point),
+    redeemed_point: toNullableString(metadata.redeemed_point),
+    available_point: toNullableInt(metadata.available_point),
+  };
+}
+
 function buildSaleTransactionData(customer, location, transaction) {
   return {
     customer_id: customer.customer_id,
@@ -66,21 +87,22 @@ function buildSaleTransactionData(customer, location, transaction) {
     net_sales: toNullableFloat(transaction.net_sales),
     location_name: transaction.location_name ?? null,
     order_type_name: transaction.order_type_name ?? null,
-    total_point: toNullableInt(transaction.total_point),
-    earned_point: toNullableInt(transaction.earned_point),
-    redeemed_point: toNullableString(transaction.redeemed_point),
-    available_point: toNullableInt(transaction.available_point),
-    products: toProducts(transaction.sale_detail_transactions),
+    ...toPointData(transaction),
+    // Kolom Json nullable tidak menerima literal null; Prisma mewajibkan
+    // DbNull untuk menyimpan NULL SQL.
+    products: toProducts(transaction.sale_detail_transactions) ?? Prisma.DbNull,
     subtotal: toNullableFloat(transaction.subtotal),
     net_sales_after_tax: toNullableFloat(transaction.net_sales_after_tax),
     sales_time: transaction.sales_time
       ? new Date(transaction.sales_time)
       : null,
     note: transaction.note ?? null,
-    applied_promos_redeemed_point: toNullableInt(
+    // Kolom bertipe TEXT sejak migration 20260923074814_revisi.
+    applied_promos_redeemed_point: toNullableString(
       transaction.applied_promos_redeemed_point,
     ),
-    loyalty_discount_fee: toNullableFloat(transaction.loyalty_discount_fee),
+    // Kolom bertipe TEXT sejak migration 20260925034037_modifiy_sale_transaction.
+    loyalty_discount_fee: toNullableString(transaction.loyalty_discount_fee),
   };
 }
 
@@ -164,153 +186,330 @@ async function generateSaleTransactionsFromRunchise(customer_id) {
   return summary;
 }
 
-// Menarik sale transaction seluruh customer yang sudah tersinkon Runchise
+// Batas beban ke API Runchise dan database untuk generate seluruh customer.
+// RUNCHISE_HTTP_CONCURRENCY adalah batas keras request paralel ke Runchise
+// (sama dengan jobs/customer-sync); CUSTOMER_CONCURRENCY hanya menentukan
+// berapa customer yang antreannya diisi sekaligus agar slot HTTP selalu penuh.
+const RUNCHISE_HTTP_CONCURRENCY = 5;
+const CUSTOMER_CONCURRENCY = 5;
+const INSERT_CHUNK_SIZE = 200;
+const RUNCHISE_MAX_RETRIES = 3;
+const RUNCHISE_RETRY_BASE_DELAY_MS = 1_000;
+const RUNCHISE_RETRY_MAX_DELAY_MS = 30_000;
+// Ringkasan dikirim sebagai response HTTP; daftar error dibatasi agar tidak
+// membengkak saat Runchise down dan ribuan customer gagal.
+const MAX_REPORTED_ERRORS = 50;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// getDetailSaleTransaction membungkus AxiosError ke dalam `cause`, sedangkan
+// listSaleTransactionByCustomerId melempar AxiosError apa adanya.
+function getAxiosError(error) {
+  if (axios.isAxiosError(error)) return error;
+  if (axios.isAxiosError(error?.cause)) return error.cause;
+  return null;
+}
+
+// Hanya error jaringan/timeout, 429, dan 5xx yang layak diulang; 4xx lain
+// (mis. transaksi tidak ditemukan) akan gagal lagi dengan hasil yang sama.
+function isTransientRunchiseError(error) {
+  const axiosError = getAxiosError(error);
+  if (!axiosError) return false;
+  const status = axiosError.response?.status;
+  return status === undefined || status === 429 || status >= 500;
+}
+
+function getRetryDelayMs(error, attempt) {
+  const retryAfterSeconds = Number(
+    getAxiosError(error)?.response?.headers?.["retry-after"],
+  );
+  const backoff = RUNCHISE_RETRY_BASE_DELAY_MS * 2 ** attempt;
+  const delay = Number.isFinite(retryAfterSeconds)
+    ? Math.max(backoff, retryAfterSeconds * 1_000)
+    : backoff;
+  return Math.min(delay, RUNCHISE_RETRY_MAX_DELAY_MS);
+}
+
+async function withRunchiseRetry(fn) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= RUNCHISE_MAX_RETRIES || !isTransientRunchiseError(error)) {
+        throw error;
+      }
+      await sleep(getRetryDelayMs(error, attempt));
+    }
+  }
+}
+
+function recordError(summary, entry) {
+  if (summary.errors.length < MAX_REPORTED_ERRORS) {
+    summary.errors.push(entry);
+  } else {
+    summary.errors_truncated += 1;
+  }
+}
+
+async function syncSaleTransactionsForCustomer(customer, context) {
+  const { summary, runchiseRequest, locationByRunchiseId, knownRunchiseIds } =
+    context;
+
+  const summaries = await runchiseRequest(() =>
+    listSaleTransactionByCustomerId(customer.runchise_id),
+  );
+  summary.total_fetched += summaries.length;
+
+  const pendingIds = [];
+  for (const trx of summaries) {
+    // Runchise dapat mengirim id sebagai string, sedangkan kolom runchise_id
+    // bertipe Int; tanpa normalisasi, pengecekan Set di bawah tidak pernah
+    // cocok dan seluruh detail ditarik ulang setiap run.
+    const runchiseId = Number(trx.id);
+
+    // id transaksi dipakai sebagai unique key; tanpa itu baris tidak bisa
+    // disimpan secara idempoten.
+    if (!trx.id || !Number.isInteger(runchiseId)) {
+      summary.skipped_missing_runchise_id += 1;
+      console.warn(
+        `Transaction without runchise id (sales_no: ${trx.sales_no}), skip`,
+      );
+      continue;
+    }
+
+    // Detail transaksi adalah snapshot saat penjualan, jadi transaksi yang
+    // sudah tersimpan tidak ditarik ulang. Id langsung ditandai agar
+    // duplikat di run yang sama tidak di-fetch dua kali; bila fetch-nya
+    // gagal, run berikutnya akan mencobanya lagi karena Set dibangun ulang
+    // dari database.
+    if (knownRunchiseIds.has(runchiseId)) {
+      summary.skipped_already_synced += 1;
+      continue;
+    }
+    knownRunchiseIds.add(runchiseId);
+    pendingIds.push(runchiseId);
+  }
+
+  // Seluruh detail customer ini dimasukkan ke antrean sekaligus; jumlah
+  // request yang benar-benar berjalan tetap dibatasi runchiseRequest.
+  // allSettled memastikan satu detail yang gagal tidak membuang detail lain
+  // yang sudah berhasil ditarik.
+  const results = await Promise.allSettled(
+    pendingIds.map((id) => runchiseRequest(() => getDetailSaleTransaction(id))),
+  );
+
+  const rows = [];
+  results.forEach((result, index) => {
+    const runchiseId = pendingIds[index];
+
+    if (result.status === "rejected" || !result.value) {
+      summary.failed_transactions += 1;
+      recordError(summary, {
+        customer_id: customer.customer_id,
+        runchise_transaction_id: runchiseId,
+        message:
+          result.status === "rejected"
+            ? result.reason?.message
+            : "Detail transaksi kosong dari Runchise",
+      });
+      return;
+    }
+
+    const transaction = result.value;
+    const location = locationByRunchiseId.get(Number(transaction.location_id));
+
+    if (!location) {
+      summary.skipped_location_not_found += 1;
+      console.warn(
+        `Location not found for runchise_id: ${transaction.location_id}, skip transaction ${transaction.id}`,
+      );
+      return;
+    }
+
+    rows.push(buildSaleTransactionData(customer, location, transaction));
+  });
+
+  // Semua baris di sini belum ada di database, jadi cukup satu INSERT per
+  // chunk. skipDuplicates menjaga idempotensi bila baris yang sama sempat
+  // disimpan proses lain (mis. worker customer-sync) di tengah run.
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
+    const { count } = await withDbRetry(() =>
+      prisma.saleTransaction.createMany({ data: chunk, skipDuplicates: true }),
+    );
+
+    summary.inserted += count;
+    summary.skipped_duplicate += chunk.length - count;
+  }
+}
+
+async function runGenerateAllSaleTransactions() {
+  const startedAt = Date.now();
+
+  const [customers, locations, existingTransactions] = await Promise.all([
+    prisma.customer.findMany({
+      where: { runchise_id: { not: null } },
+      select: { customer_id: true, runchise_id: true },
+    }),
+    prisma.location.findMany({
+      select: { location_id: true, runchise_id: true },
+    }),
+    prisma.saleTransaction.findMany({
+      where: { runchise_id: { not: null } },
+      select: { runchise_id: true },
+    }),
+  ]);
+
+  const { default: pLimit } = await import("p-limit");
+  const httpLimit = pLimit(RUNCHISE_HTTP_CONCURRENCY);
+  const customerLimit = pLimit(CUSTOMER_CONCURRENCY);
+
+  const context = {
+    summary: {
+      total_customers: customers.length,
+      processed_customers: 0,
+      failed_customers: 0,
+      total_fetched: 0,
+      inserted: 0,
+      failed_transactions: 0,
+      skipped_missing_runchise_id: 0,
+      skipped_location_not_found: 0,
+      skipped_already_synced: 0,
+      skipped_duplicate: 0,
+      duration_ms: 0,
+      errors: [],
+      errors_truncated: 0,
+    },
+    // Retry dijalankan di dalam slot limiter: saat Runchise membalas 429,
+    // backoff ikut menahan slot sehingga beban ke Runchise benar-benar turun.
+    runchiseRequest: (fn) => httpLimit(() => withRunchiseRetry(fn)),
+    // Lookup lokasi dan id transaksi tersimpan dalam bentuk Map/Set agar
+    // pengecekan per transaksi tidak menambah roundtrip database.
+    locationByRunchiseId: new Map(
+      locations
+        .filter((location) => location.runchise_id !== null)
+        .map((location) => [location.runchise_id, location]),
+    ),
+    knownRunchiseIds: new Set(
+      existingTransactions.map((transaction) => transaction.runchise_id),
+    ),
+  };
+  const { summary } = context;
+
+  await Promise.all(
+    customers.map((customer) =>
+      customerLimit(async () => {
+        try {
+          await syncSaleTransactionsForCustomer(customer, context);
+          summary.processed_customers += 1;
+        } catch (error) {
+          summary.failed_customers += 1;
+          recordError(summary, {
+            customer_id: customer.customer_id,
+            message: error.message,
+          });
+        }
+      }),
+    ),
+  );
+
+  summary.duration_ms = Date.now() - startedAt;
+  return summary;
+}
+
+// Menarik sale transaction seluruh customer yang sudah tersinkron Runchise
 // sekaligus. Dioptimalkan untuk jumlah customer besar:
 // - referensi lokasi dan id transaksi yang sudah tersimpan di-preload satu
 //   kali ke Map/Set, bukan di-query per customer;
 // - transaksi yang sudah tersimpan tidak ditarik ulang detailnya dari
-//   Runchise (detil transaksi adalah snapshot saat penjualan);
-// - panggilan API Runchise dijalankan konkuren dengan p-limit (pola yang
-//   sama dengan jobs/customer-sync);
-// - penulisan database di-batch per chunk dalam satu transaksi.
-// Kegagalan satu customer (mis. API Runchise timeout) tidak menghentikan
-// customer lain; hasil tiap customer diagregasi menjadi satu ringkasan.
+//   Runchise (detail transaksi adalah snapshot saat penjualan);
+// - detail transaksi ditarik paralel dengan batas global
+//   RUNCHISE_HTTP_CONCURRENCY, dengan retry + backoff untuk error transien;
+// - baris baru disimpan dengan createMany per chunk.
+// Kegagalan satu transaksi atau satu customer tidak menghentikan yang lain.
+// Dijaga advisory lock sehingga hanya satu run yang aktif lintas instance;
+// run kedua langsung mengembalikan { skipped: true }.
 // Dipakai endpoint admin.
 async function generateAllSaleTransactionsFromRunchise() {
-  try {
-    const [customers, locations, existingTransactions] = await Promise.all([
-      prisma.customer.findMany({
-        where: { runchise_id: { not: null } },
-        select: { customer_id: true, runchise_id: true },
-      }),
-      prisma.location.findMany({
-        select: { location_id: true, runchise_id: true },
-      }),
-      prisma.saleTransaction.findMany({
-        where: { runchise_id: { not: null } },
-        select: { runchise_id: true },
-      }),
-    ]);
+  return withDistributedCronLock({
+    jobName: "sale-transactions-generate-all",
+    lockId: RUNCHISE_CRON_LOCK_IDS.saleTransactionsGenerateAll,
+    run: runGenerateAllSaleTransactions,
+  });
+}
 
-    // Lookup lokasi dan id transaksi tersimpan dalam bentuk Map/Set agar
-    // pengecekan per transaksi tidak menambah roundtrip database. Key
-    // dinormalisasi ke Number karena Runchise mengirim angka sebagai string.
-    const locationByRunchiseId = new Map(
-      locations
-        .filter((location) => location.runchise_id !== null)
-        .map((location) => [location.runchise_id, location]),
-    );
-    const syncedRunchiseIds = new Set(
-      existingTransactions.map((transaction) => transaction.runchise_id),
-    );
+// Mengisi ulang kolom poin transaksi yang tersimpan sebelum mapping poin
+// membaca dari `metadata`. Poin tidak tersimpan di mana pun secara lokal,
+// jadi detail transaksi ditarik ulang dari Runchise. Hanya kolom poin yang
+// di-update; transaksi tanpa data loyalty (mis. Shopee Integrasi) dibiarkan
+// NULL. `limit` membatasi jumlah baris untuk uji coba bertahap.
+async function backfillSaleTransactionPoints({ dryRun = false, limit } = {}) {
+  const startedAt = Date.now();
 
-    const { default: pLimit } = await import("p-limit");
-    const httpLimit = pLimit(5); // maksimal 5 request paralel ke API Runchise
-    const customerLimit = pLimit(3); // customer diproses 3 sekaligus
-    const UPSERT_CHUNK_SIZE = 50;
+  const rows = await prisma.saleTransaction.findMany({
+    where: {
+      runchise_id: { not: null },
+      OR: [{ total_point: null }, { point_from_transaction: null }],
+    },
+    select: { transaction_id: true, runchise_id: true },
+    orderBy: { sales_time: "desc" },
+    ...(limit ? { take: Number(limit) } : {}),
+  });
 
-    const summary = {
-      total_customers: customers.length,
-      processed: 0,
-      failed: 0,
-      total_fetched: 0,
-      upserted: 0,
-      skipped_missing_runchise_id: 0,
-      skipped_location_not_found: 0,
-      skipped_already_synced: 0,
-      errors: [],
-    };
+  const summary = {
+    dry_run: dryRun,
+    total_candidates: rows.length,
+    updated: 0,
+    skipped_no_loyalty_data: 0,
+    failed_transactions: 0,
+    duration_ms: 0,
+    errors: [],
+    errors_truncated: 0,
+  };
 
-    await Promise.all(
-      customers.map((customer) =>
-        customerLimit(async () => {
-          try {
-            const summaries = await httpLimit(() =>
-              listSaleTransactionByCustomerId(customer.runchise_id),
-            );
-
-            summary.total_fetched += summaries.length;
-
-            const rows = [];
-            for (const trx of summaries) {
-              // id transaksi dipakai sebagai unique key upsert; tanpa itu
-              // baris tidak bisa disimpan secara idempoten.
-              if (!trx.id || !Number.isFinite(Number(trx.id))) {
-                summary.skipped_missing_runchise_id += 1;
-                console.warn(
-                  `Transaction without runchise id (sales_no: ${trx.sales_no}), skip`,
-                );
-                continue;
-              }
-
-              // Detail transaksi adalah snapshot saat penjualan, jadi
-              // transaksi yang sudah tersimpan tidak ditarik ulang. Inilah
-              // yang membuat run berikutnya jauh lebih cepat.
-              if (syncedRunchiseIds.has(trx.id)) {
-                summary.skipped_already_synced += 1;
-                continue;
-              }
-
-              const transaction = await httpLimit(() =>
-                getDetailSaleTransaction(trx.id),
-              );
-
-              const location = locationByRunchiseId.get(
-                Number(transaction.location_id),
-              );
-
-              if (!location) {
-                summary.skipped_location_not_found += 1;
-                console.warn(
-                  `Location not found for runchise_id: ${transaction.location_id}, skip transaction ${transaction.id}`,
-                );
-                continue;
-              }
-
-              rows.push(
-                buildSaleTransactionData(customer, location, transaction),
-              );
-            }
-
-            // Penulisan di-batch per chunk dalam satu transaksi (dengan retry
-            // untuk error koneksi transien) agar tidak satu roundtrip
-            // database per baris. Upsert by runchise_id membuat chunk aman
-            // diulang.
-            for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
-              const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
-              await withDbRetry(() =>
-                prisma.$transaction(
-                  chunk.map((data) =>
-                    prisma.saleTransaction.upsert({
-                      where: { runchise_id: data.runchise_id },
-                      create: data,
-                      update: data,
-                    }),
-                  ),
-                  { timeout: 30_000 },
-                ),
-              );
-
-              for (const data of chunk) syncedRunchiseIds.add(data.runchise_id);
-            }
-
-            summary.upserted += rows.length;
-            summary.processed += 1;
-          } catch (error) {
-            summary.failed += 1;
-            summary.errors.push({
-              customer_id: customer.customer_id,
-              message: error.message,
-            });
-          }
-        }),
-      ),
-    );
-
+  if (dryRun) {
+    summary.duration_ms = Date.now() - startedAt;
     return summary;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
   }
+
+  const { default: pLimit } = await import("p-limit");
+  const httpLimit = pLimit(RUNCHISE_HTTP_CONCURRENCY);
+
+  await Promise.all(
+    rows.map((row) =>
+      httpLimit(async () => {
+        try {
+          const transaction = await withRunchiseRetry(() =>
+            getDetailSaleTransaction(row.runchise_id),
+          );
+          const points = toPointData(transaction ?? {});
+
+          if (Object.values(points).every((value) => value === null)) {
+            summary.skipped_no_loyalty_data += 1;
+            return;
+          }
+
+          await withDbRetry(() =>
+            prisma.saleTransaction.update({
+              where: { transaction_id: row.transaction_id },
+              data: points,
+            }),
+          );
+          summary.updated += 1;
+        } catch (error) {
+          summary.failed_transactions += 1;
+          recordError(summary, {
+            transaction_id: row.transaction_id,
+            runchise_transaction_id: row.runchise_id,
+            message: error.message,
+          });
+        }
+      }),
+    ),
+  );
+
+  summary.duration_ms = Date.now() - startedAt;
+  return summary;
 }
 
 // Daftar transaksi penjualan milik satu customer dari tabel lokal (hasil
@@ -362,5 +561,6 @@ async function listSaleTransactionsByCustomerId(customer_id, query = {}) {
 module.exports = {
   generateSaleTransactionsFromRunchise,
   generateAllSaleTransactionsFromRunchise,
+  backfillSaleTransactionPoints,
   listSaleTransactionsByCustomerId,
 };

@@ -67,14 +67,23 @@ async function generateSaleTransactions(req, res) {
   }
 }
 
-// Menarik sale transaction seluruh customer tersinkon Runchise lalu
-// menyimpannya (upsert) ke tabel SaleTransaction lokal. Kegagalan per
-// customer tidak menghentikan proses dan dilaporkan pada ringkasan balasan.
-// Proses bisa berjalan sangat lama karena memanggil API Runchise untuk
-// setiap customer.
+// Menarik sale transaction seluruh customer tersinkron Runchise lalu
+// menyimpan transaksi baru ke tabel SaleTransaction lokal. Kegagalan per
+// customer/transaksi tidak menghentikan proses dan dilaporkan pada ringkasan
+// balasan. Proses bisa berjalan lama karena memanggil API Runchise untuk
+// setiap customer; hanya satu run yang boleh aktif sekaligus.
 async function generateAllSaleTransactions(req, res) {
   try {
     const summary = await generateAllSaleTransactionsFromRunchise();
+
+    if (summary.skipped) {
+      return badRequest({
+        res,
+        code: 409,
+        error:
+          "Generate seluruh sale transaction sedang berjalan. Tunggu hingga selesai sebelum menjalankan ulang.",
+      });
+    }
 
     return successRequest({
       res,
