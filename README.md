@@ -1,415 +1,226 @@
-  # Crisbar Backend
-
-  Backend API untuk aplikasi loyalty Crisbar/Crisbro. Aplikasi ini menangani autentikasi customer/admin, data customer, poin, redeem menu, katalog produk,
-  lokasi outlet, promo, sinkronisasi data Runchise, dan activity log admin.
-
-  ## Customer Sync Worker (BullMQ)
-
-  Konfigurasi koneksi Redis di `.env` (default `127.0.0.1:6379`):
-
-  ```dotenv
-  REDIS_HOST=127.0.0.1
-  REDIS_PORT=6379
-  REDIS_PASSWORD=isi_password_redis
-  # REDIS_USERNAME=default
-  ```
-
-  Isi password sesuai server Redis; hilangkan jika server tidak memakai autentikasi.
-  `REDIS_USERNAME` opsional untuk Redis ACL. Alternatifnya, gunakan
-  `REDIS_URL=redis://default:password@127.0.0.1:6379` (menggantikan konfigurasi
-  terpisah di atas); gunakan `rediss://` untuk TLS dan URL-encode karakter khusus
-  dalam username/password.
-
-  Jalankan worker sebagai proses terpisah:
-
-  ```bash
-  npm run worker:customer-sync
-  ```
-
-  Worker memuat `.env` dan mendaftarkan scheduler `customer-sync-every-minute`
-  pada queue `customer-sync` dengan interval 60.000 ms. ID scheduler tetap
-  sehingga restart tidak membuat jadwal duplikat. Proses worker harus terus
-  berjalan; `npm run dev` hanya menjalankan API. Jika job sebelumnya masih
-  berjalan, eksekusi berikutnya menunggu worker tersedia (concurrency 1).
-
-  ## Tech Stack
-
-  - Node.js
-  - Express.js
-  - PostgreSQL
-  - Prisma ORM
-  - JWT Authentication
-  - Nodemailer
-  - Swagger UI
-  - Vercel-ready deployment
-
-  ## Fitur Utama
-
-  - Login dan autentikasi user menggunakan JWT
-  - Aktivasi akun customer
-  - Manajemen data customer
-  - Manajemen poin customer
-  - Riwayat poin dan transaksi
-  - Redeem/tukar poin menu outlet
-  - Katalog produk dan menu redeem
-  - Data lokasi outlet
-  - Data promo
-  - Sinkronisasi data dari Runchise
-  - Activity log untuk aktivitas admin dan marketing
-  - Dokumentasi API via Swagger
-
-  ## Struktur Folder
-
-  ```txt
-  crisbro-backend/
-  ├── prisma/
-  │   └── schema.prisma
-  ├── scripts/
-  │   ├── createAdmin.js
-  │   ├── prismaGenerate.js
-  │   └── verifyRedeemMenuFlow.js
-  ├── src/
-  │   ├── controllers/
-  │   ├── lib/
-  │   ├── middlewares/
-  │   ├── routes/
-  │   ├── services/
-  │   ├── index.js
-  │   └── openapi.yaml
-  ├── package.json
-  └── README.md
-
-  ## Environment Variables
-
-  Buat file .env di root folder backend.
-
-  DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
-  DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
-
-  JWT_SECRET="your-jwt-secret"
-
-  RUNCHISE_API_KEY="your-runchise-api-key"
-  RUNCHISE_PARENT_BRAND_ID="750"
-  RUNCHISE_REDEEM_SUB_BRAND_ID="1041"
-
-  PB1_RATE="0.1"
-  DEFAULT_REWARD_THRESHOLD="100"
-
-  MAIL_FROM="Crisbar <no-reply@yourdomain.com>"
-  SMTP_HOST="smtp.example.com"
-  SMTP_PORT="587"
-  SMTP_USER="your-smtp-user"
-  SMTP_PASS="your-smtp-password"
-  SMTP_SECURE="false"
-
-  FRONTEND_URL="http://localhost:5173"
-  ACTIVATION_TOKEN_TTL_HOURS="24"
-
-  CRON_SECRET="your-cron-secret"
-
-  # Swagger UI (/api/docs) nonaktif secara default di production.
-  # Set API_DOCS_ENABLED="true" untuk mengaktifkan, wajib disertai kredensial berikut.
-  API_DOCS_ENABLED="false"
-  API_DOCS_USER="your-docs-username"
-  API_DOCS_PASSWORD="your-docs-password"
-
-  Jangan commit file .env ke repository.
-
-  ## Instalasi
-
-  npm install
-
-  Generate Prisma Client:
-
-  npm run build
-
-  Jika menggunakan database baru, jalankan migration Prisma:
-
-  npx prisma migrate deploy
-
-  Untuk development database lokal:
-
-  npx prisma migrate dev
-
-  ## Menjalankan Server
-
-  Development:
-
-  npm run dev
-
-  Default server berjalan di:
-
-  http://localhost:5000
-
-  Health check:
-
-  GET /
-
-  Response:
-
-  {
-    "message": "API Running"
-  }
-
-  ## Dokumentasi API
-
-  Swagger UI tersedia di:
-
-  GET /api/docs
-
-  OpenAPI JSON tersedia di:
-
-  GET /api/docs/openapi.json
-
-  Di production, kedua endpoint di atas nonaktif (404) secara default. Aktifkan
-  hanya bila perlu lewat API_DOCS_ENABLED="true" beserta API_DOCS_USER dan
-  API_DOCS_PASSWORD (dilindungi HTTP Basic Auth). Lihat
-  docs/fix-L1-swagger-docs-public-exposure.md.
-
-  ## Endpoint Utama
-
-  ### Auth
-
-  /api/auth
-
-  Digunakan untuk login, autentikasi, dan kebutuhan akses user.
-
-  ### Customer
-
-  /api/customers
-
-  Digunakan untuk data customer, aktivasi akun, dan data profil customer.
-
-  ### Points
-
-  /api/points
-
-  Digunakan untuk melihat poin customer dan riwayat poin.
-
-  ### Rewards Catalog
-
-  /api/rewards-catalog
-
-  Digunakan untuk katalog reward berbasis poin.
-
-  ### Redeem
-
-  /api/redeem
-
-  Digunakan untuk proses tukar poin/redeem menu.
-
-  ### Redeem Menu Catalog
-
-  /api/catalog/redeem-menu
-
-  Digunakan untuk daftar kategori dan item menu redeem.
-
-  ### Product Catalog
-
-  /api/catalog/products
-
-  Digunakan untuk katalog produk/menu.
-
-  ### Locations
-
-  /api/locations
-
-  Digunakan untuk daftar lokasi outlet.
-
-  ### Promos
-
-  /api/promos
-
-  Digunakan untuk daftar promo.
-
-  ### Admin
-
-  /api/admin
-
-  Digunakan untuk dashboard admin, customer management, redeem menu management, dan activity log.
-
-  ## Sinkronisasi Runchise
-
-  Backend memiliki endpoint sinkronisasi untuk mengambil data dari Runchise.
-
-  /admin/sync/customers
-  /admin/sync/products
-  /admin/sync/points
-  /admin/sync/brands
-  /admin/sync/locations
-  /admin/sync/promos
-  /admin/sync/sales-transactions
-
-  Versi dengan prefix API juga tersedia:
-
-  /api/admin/sync/customers
-  /api/admin/sync/products
-  /api/admin/sync/points
-  /api/admin/sync/brands
-  /api/admin/sync/locations
-  /api/admin/sync/promos
-  /api/admin/sync/sales-transactions
-
-  Endpoint sync membutuhkan akses role admin/staff.
-
-  ## Cron Sync
-
-  Endpoint cron tersedia untuk menjalankan sinkronisasi otomatis. Setiap
-  tahap punya endpoint, jadwal, dan mutex sendiri (lihat vercel.json) supaya
-  timeout atau error pada satu tahap tidak menghanguskan tahap lain:
-
-  GET  /api/cron/runchise-sync/locations
-  POST /api/cron/runchise-sync/locations
-
-  GET  /api/cron/runchise-sync/brands
-  POST /api/cron/runchise-sync/brands
-
-  GET  /api/cron/runchise-sync/products
-  POST /api/cron/runchise-sync/products
-
-  GET  /api/cron/runchise-sync/customers
-  POST /api/cron/runchise-sync/customers
-  (worker berbasis cursor; satu invocation memproses beberapa halaman lalu
-  menyimpan progres, aman dipanggil berkali-kali per hari)
-
-  GET  /api/cron/runchise-sync/sales-transactions
-  POST /api/cron/runchise-sync/sales-transactions
-
-  GET  /api/cron/runchise-sync/promos
-  POST /api/cron/runchise-sync/promos
-
-  GET  /api/cron/runchise-sync/points
-  POST /api/cron/runchise-sync/points
-
-  GET  /api/cron/runchise-sync/customer-timestamps-worker
-  POST /api/cron/runchise-sync/customer-timestamps-worker
-
-  /api/cron/runchise-sync/master sudah dihapus (mengembalikan 410 Gone).
-  Endpoint itu dulu merangkai keenam tahap di atas berurutan dalam satu
-  request, yang melebihi batas eksekusi function Vercel pada sinkronisasi
-  harian.
-
-  Di production, endpoint cron dilindungi menggunakan CRON_SECRET.
-
-  Kirim secret melalui salah satu cara berikut:
-
-  Authorization: Bearer your-cron-secret
-
-  atau:
-
-  x-cron-secret: your-cron-secret
-
-  ## Activity Log Admin & Marketing
-
-  Activity log disimpan di tabel AdminActivityLog.
-
-  Data yang dicatat meliputi:
-
-  - User yang melakukan aksi
-  - Role user
-  - Jenis aksi
-  - Entity yang diubah
-  - Data sebelum perubahan
-  - Data setelah perubahan
-  - Metadata tambahan
-  - IP address
-  - User agent
-  - Waktu aktivitas
-
-  Contoh aktivitas yang dicatat:
-
-  - Membuat admin user
-  - Mengubah admin user
-  - Menghapus admin user
-  - Membuat customer
-  - Mengubah customer
-  - Menghapus customer
-  - Resend aktivasi customer
-  - Retry sync customer ke Runchise
-  - Membuat kategori redeem
-  - Mengubah kategori redeem
-  - Membuat item redeem
-  - Mengubah item redeem
-  - Menghapus item redeem
-
-  ## Database
-
-  Backend menggunakan PostgreSQL dengan Prisma ORM.
-
-  Model utama:
-
-  - User
-  - Customer
-  - CustomerPoint
-  - PointHistory
-  - RewardRedemption
-  - RewardsCatalog
-  - Brand
-  - SubBrand
-  - Location
-  - MenuCategory
-  - MenuItem
-  - RedeemMenuCategory
-  - RedeemMenuItem
-  - Promo
-  - CustomerSalesTransactionReport
-  - AdminActivityLog
-
-  Untuk membuka Prisma Studio:
-
-  npx prisma studio
-
-  ## Script
-
-  npm run dev
-
-  Menjalankan server development dengan nodemon.
-
-  npm run build
-
-  Generate Prisma Client.
-
-  npm run create-admin
-
-  Membuat user admin.
-
-  npm run verify:redeem-menu
-
-  Verifikasi flow redeem menu dengan konfirmasi write ke database.
-
-  npm run cleanup:redeem-menu-test
-
-  Membersihkan data test redeem menu.
-
-  ## Deployment
-
-  Backend sudah disiapkan untuk deployment, termasuk Vercel build hook.
-
-  Script build production:
-
-  npm run build
-
-  Pastikan environment variable production sudah diisi:
-
-  - DATABASE_URL
-  - DIRECT_URL
-  - JWT_SECRET
-  - RUNCHISE_API_KEY
-  - CRON_SECRET
-  - SMTP config
-  - Runchise config
-  - Frontend URL
-
-  ## Catatan Keamanan
-
-  - Jangan commit .env
-  - Gunakan JWT_SECRET yang kuat di production
-  - Gunakan CRON_SECRET yang kuat untuk endpoint cron
-  - Batasi akses endpoint admin hanya untuk role yang sesuai
-  - Biarkan API_DOCS_ENABLED nonaktif di production kecuali benar-benar perlu;
-    bila diaktifkan, wajib set API_DOCS_USER/API_DOCS_PASSWORD yang kuat
-  - Content-Security-Policy aktif secara global (lihat
-    docs/fix-L2-csp-disabled-globally.md); jangan menambah 'unsafe-inline'
-    atau 'unsafe-eval' pada CSP global, buat kebijakan khusus per-route bila
-    ada halaman HTML baru yang butuh pengecualian
-  - Jangan menyimpan token, password, atau API key di repository
+# Crisbro Backend
+
+Backend API untuk aplikasi loyalty Crisbar/Crisbro. Menangani autentikasi
+customer & staff, data customer dan poin, referral, katalog produk loyalty,
+lokasi outlet, promo, serta sinkronisasi data dari Runchise (POS).
+
+## Tech Stack
+
+- Node.js 22+ (CommonJS) + Express 5
+- PostgreSQL (Supabase) + Prisma ORM 6
+- Redis + BullMQ untuk background worker
+- Zod untuk validasi request
+- JWT (cookie httpOnly atau Bearer token)
+- Integrasi: Runchise (POS), Fazpass (OTP), Qontak (WhatsApp), SMTP (email)
+- Deploy ke Vercel
+
+## Quick Start
+
+```bash
+npm install          # otomatis menjalankan `prisma generate`
+# buat file .env — lihat bagian Environment Variables
+npm run db:migrate   # terapkan migration ke database development
+npm run dev          # API di http://localhost:5002
+```
+
+Worker sinkronisasi berjalan sebagai proses terpisah (butuh Redis):
+
+```bash
+npm run worker:customer-sync
+```
+
+Cek server hidup: `GET /` → `{ "message": "API Running" }`.
+
+## Environment Variables
+
+Buat file `.env` di root folder backend. Jangan commit file ini.
+
+### Wajib
+
+| Variabel | Keterangan |
+| --- | --- |
+| `DATABASE_URL` | Koneksi Postgres untuk aplikasi (Supabase transaction pooler, port 6543) |
+| `DIRECT_URL` | Koneksi Postgres session-mode (port 5432). Dipakai untuk migration dan advisory lock — tanpa ini lock fail-closed |
+| `JWT_SECRET` | Secret penandatanganan JWT. Gunakan nilai acak yang panjang |
+| `RUNCHISE_API_KEY` | API key Runchise |
+| `FRONTEND_URL` | Origin frontend; otomatis masuk allowlist CORS |
+
+### Integrasi
+
+| Variabel | Keterangan |
+| --- | --- |
+| `FAZPASS_BASE_URL`, `FAZPASS_MERCHANT_KEY`, `FAZPASS_GATEWEY_KEY` | OTP via Fazpass (perhatikan ejaan `GATEWEY`) |
+| `QONTAK_BASE_URL`, `QONTAK_CLIENT_ID`, `QONTAK_CLIENT_SECRET` | WhatsApp via Qontak |
+| `QONTAK_DEV_CLIENT_ID`, `QONTAK_DEV_CLIENT_SECRET` | Kredensial Qontak environment dev |
+| `QONTAK_TEMPLATE_ID`, `QONTAK_CHANNEL_ID` | Template pesan & channel WhatsApp |
+| `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE` | Pengiriman email |
+| `REFERRAL_VALIDATION_URL` | URL yang dicantumkan pada alur validasi referral |
+
+### Redis (khusus worker)
+
+| Variabel | Default | Keterangan |
+| --- | --- | --- |
+| `REDIS_URL` | – | Jika diisi, menggantikan variabel di bawah. Pakai `rediss://` untuk TLS; URL-encode karakter khusus |
+| `REDIS_HOST` | `127.0.0.1` | |
+| `REDIS_PORT` | `6379` | |
+| `REDIS_USERNAME` | – | Untuk Redis ACL |
+| `REDIS_PASSWORD` | – | Kosongkan bila Redis tanpa autentikasi |
+
+### Opsional
+
+| Variabel | Default | Keterangan |
+| --- | --- | --- |
+| `PORT` | `5002` | Port HTTP |
+| `NODE_ENV` | – | `production` mengaktifkan CORS ketat, cookie `Secure`, dan menutup Swagger |
+| `CORS_ORIGINS` | – | Origin tambahan, dipisah koma |
+| `SESSION_COOKIE_NAME` | `crisbar_session` | |
+| `SESSION_COOKIE_SAME_SITE` | `none` (prod) / `strict` (dev) | |
+| `JWT_EXPIRES_IN` | `7d` | Batas absolut sesi customer |
+| `CUSTOMER_SESSION_IDLE_DAYS` | `7` | |
+| `ADMIN_SESSION_IDLE_MINUTES` | `480` | Idle timeout staff (admin/marketing) |
+| `ADMIN_SESSION_ABSOLUTE_HOURS` | `24` | Batas absolut sesi staff |
+| `SESSION_RENEW_INTERVAL_MINUTES` | `5` | |
+| `API_DOCS_ENABLED` | `false` | Buka Swagger di production (wajib dengan `API_DOCS_USER` + `API_DOCS_PASSWORD`) |
+
+## NPM Scripts
+
+| Script | Fungsi |
+| --- | --- |
+| `npm run dev` | Jalankan API dengan nodemon |
+| `npm run worker:customer-sync` | Jalankan worker BullMQ (proses terpisah) |
+| `npm run lint` | ESLint |
+| `npm run db:migrate` | `prisma migrate dev` lewat `DIRECT_URL` (argumen tambahan diteruskan, mis. `-- --name add_x`) |
+| `npm run db:unlock` | Tampilkan pemegang advisory lock Postgres; tambah `-- --kill` untuk menghentikannya |
+
+## Database
+
+Skema ada di [prisma/schema.prisma](prisma/schema.prisma), diagram ERD di
+[prisma/crisbro_erd.svg](prisma/crisbro_erd.svg).
+
+- **Selalu migrasi lewat `npm run db:migrate`**, bukan `npx prisma migrate dev`
+  langsung. Migration lewat transaction pooler (`DATABASE_URL`) meninggalkan
+  advisory lock menggantung di Supabase dan menyebabkan error `P1002`.
+- Jika tetap kena `P1002`: `npm run db:unlock` lalu `npm run db:unlock -- --kill`.
+- Production: `npx prisma migrate deploy`.
+- Seed data dasar (brand, penanda lokasi non-outlet): `node prisma/seed.js`.
+- GUI database: `npx prisma studio`.
+
+## Background Worker
+
+`npm run worker:customer-sync` mendaftarkan dua job scheduler BullMQ. ID
+scheduler tetap, jadi restart tidak membuat jadwal ganda. Keduanya memakai
+concurrency 1.
+
+| Queue | Jadwal | Isi pekerjaan |
+| --- | --- | --- |
+| `customer-sync` | tiap 5 menit | Tarik sale transaction baru dari Runchise per lokasi (mulai dari checkpoint di `SyncCheckpoints`), update data customer terkait, sinkronkan status promo & promo code, lalu simpan checkpoint baru |
+| `customer-point-daily` | `0 1 * * *` (01:00) | Refresh data & poin seluruh customer aktif yang sudah terhubung ke Runchise, lalu update riwayat poin |
+
+`npm run dev` hanya menjalankan API — worker harus dijalankan dan dijaga
+hidup sendiri.
+
+## Autentikasi & Keamanan Request
+
+- **Token**: cookie httpOnly `crisbar_session` (diprioritaskan, untuk browser)
+  atau header `Authorization: Bearer <token>` (untuk tooling API).
+- **CSRF**: request non-GET yang membawa cookie sesi wajib mengirim header
+  `x-csrf-protection: 1`, jika tidak akan ditolak `403`.
+- **Role**: `admin`, `marketing` (disebut *staff*), dan `customer`.
+- **Rate limit**: global 300 request / 5 menit, plus limiter lebih ketat
+  untuk login, OTP, dan endpoint sinkronisasi berat
+  (lihat [src/lib/rateLimit.js](src/lib/rateLimit.js)).
+- Body JSON dibatasi 100 KB; Helmet memasang CSP ketat secara global.
+
+## Endpoint
+
+Semua endpoint berada di bawah prefix `/api`. Dokumentasi lengkap (Swagger UI)
+tersedia di `GET /api/docs` dan spec di `GET /api/docs/openapi.json` — terbuka
+di development, tertutup (404) di production kecuali `API_DOCS_ENABLED=true`.
+
+| Grup | Path | Akses |
+| --- | --- | --- |
+| Auth | `POST /register`, `POST /login`, `POST /send-otp`, `POST /verify-otp`, `POST /logout`, `POST /logout-all`, `POST /change-password` | Publik / login |
+| Profil | `GET /profile` (customer), `GET /me` (staff) | Login |
+| Customer (self) | `GET/PATCH /customers/me`, `GET /customers/me/point-history` | customer |
+| Customer (kelola) | `GET /customers`, `GET/PATCH /customers/:customer_id`, `PATCH /customers/:customer_id/status`, `GET /customers/:customer_id/point-history`, `GET /customers/user/:user_id` | admin, marketing |
+| Customer sync | `POST /customers/generate` | admin |
+| Staff user | `POST /users`, `PATCH /users/:user_id` | admin |
+| Referral | `POST /referral/generate`, `PATCH /referral/renew` | customer |
+| | `GET /referral/usages`, `PATCH /referral/validate/:user_id` | admin, marketing |
+| Produk | `GET /products/loyalty` | Login |
+| | `GET /products`, `POST /products/sync-products`, `POST /products/sync-loyalty-products`, `DELETE /products/:loyalty_product_id` | admin, marketing |
+| Promo | `GET/POST /promos`, `GET/PATCH /promos/:promo_id`, `PATCH /promos/:promo_id/activate`, `PATCH /promos/:promo_id/deactivate`, `POST /promos/:promo_id/promo-codes/generate`, `POST /promos/sync/:runchise_id` | admin, marketing |
+| Sale transaction | `GET /sale-transactions/customer/:customer_id` | admin, marketing |
+| | `POST /sale-transactions/generate`, `POST /sale-transactions/generate-all` | admin |
+| Lokasi | `GET /locations` | Login |
+| | `DELETE /locations/:location_id` | admin, marketing |
+| | `POST /locations/generate` | admin |
+| Dashboard | `GET /dashboard/total-counts`, `GET /dashboard/customers-per-outlet`, `GET /dashboard/top-redeemed-products`, `GET /dashboard/recent-transactions` | admin, marketing |
+| Sub brand | `GET /sub_brands` | Publik |
+| | `POST /sub_brands/generate` | admin |
+| Webhook | `POST /webhook-qontak/<token>` — menerima pesan WhatsApp untuk verifikasi nomor customer | Qontak |
+
+Endpoint `.../generate` dan `.../sync-*` menarik data dari Runchise lalu
+menyimpannya ke database lokal.
+
+## Struktur Folder
+
+```txt
+backend/
+├── prisma/
+│   ├── schema.prisma         # skema database
+│   ├── migrations/           # riwayat migration
+│   └── seed.js
+├── scripts/                  # db-migrate.sh, db-unlock.mjs
+├── src/
+│   ├── index.js              # entry point Express
+│   ├── routes/               # definisi route (routes.js = router utama)
+│   ├── controllers/          # handler HTTP
+│   ├── services/             # logika bisnis & client API eksternal
+│   ├── validation/           # skema Zod per domain
+│   ├── middleware/           # auth, role, CSRF, akses docs
+│   ├── lib/                  # prisma, redis, queue, sesi, rate limit, CORS, dll.
+│   ├── integration/qontak/   # client WhatsApp Qontak
+│   ├── jobs/customer-sync/   # worker & scheduler BullMQ
+│   ├── constants/
+│   ├── utils/
+│   └── docs/                 # openapi.yaml, swagger
+├── tests/
+└── vercel.json
+```
+
+## Testing
+
+Test memakai runner bawaan Node dengan mock Prisma, jadi tidak butuh database:
+
+```bash
+node --test tests/
+```
+
+Saat ini `tests/promo.test.cjs` membutuhkan fixture `sample_promo.json` di root
+backend yang belum ada di repository, sehingga test gagal dengan `ENOENT`
+sampai fixture tersebut ditambahkan.
+
+Catatan: `@prisma/client` memuat `.env` saat di-import, sehingga test bisa
+hijau di lokal tetapi merah di CI (yang tidak punya `.env`). Untuk
+mereproduksi kondisi CI, pindahkan `.env` sementara ke luar folder.
+
+## Deployment (Vercel)
+
+[vercel.json](vercel.json) mengarahkan semua request ke `src/index.js`.
+`prisma generate` berjalan otomatis lewat `postinstall`. Pastikan semua
+variabel pada bagian **Wajib** dan **Integrasi** sudah diisi di dashboard
+Vercel, serta `NODE_ENV=production`.
+
+Worker BullMQ **tidak** berjalan di Vercel (serverless); jalankan di server
+yang bisa menjaga proses tetap hidup dan punya akses ke Redis.
+
+## Catatan Keamanan
+
+- Jangan commit `.env`, token, password, atau API key.
+- Gunakan `JWT_SECRET` yang kuat di production.
+- Biarkan `API_DOCS_ENABLED` nonaktif di production kecuali benar-benar perlu.
+- Jangan menambah `'unsafe-inline'` / `'unsafe-eval'` pada CSP global; buat
+  kebijakan khusus per-route bila ada halaman HTML yang butuh pengecualian
+  (contoh: [src/middleware/docsCsp.js](src/middleware/docsCsp.js)).
+- Path webhook Qontak berfungsi sebagai secret — jangan dibagikan.

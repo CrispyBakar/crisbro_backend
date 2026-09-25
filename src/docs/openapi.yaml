@@ -31,6 +31,7 @@ tags:
   - name: Sub Brands
   - name: Sale Transactions
   - name: Webhook Qontak
+  - name: Dashboard
 
 paths:
   /:
@@ -1929,6 +1930,187 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/dashboard/total-counts:
+    get:
+      tags: [Dashboard]
+      summary: Ringkasan total untuk kartu dashboard
+      description: >-
+        Mengembalikan nilai saat ini dan nilai minggu lalu (7 hari ke belakang)
+        untuk total customer, transaksi redeem poin, poin member, dan loyalty
+        product. Nilai minggu lalu customer, poin member, dan loyalty product
+        dihitung dari data dengan `created_at` <= 7 hari lalu; poin member
+        memakai saldo `available_point` saat ini, bukan snapshot historis.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Ringkasan total dashboard
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/DashboardTotalCounts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/dashboard/customers-per-outlet:
+    get:
+      tags: [Dashboard]
+      summary: Jumlah customer per outlet
+      description: >-
+        Customer dikelompokkan menurut outlet terdaftarnya
+        (`Customer.owner_location_id`); customer tanpa outlet terdaftar tidak
+        dihitung. Untuk periode waktu, yang dihitung adalah customer yang
+        mendaftar (`Customer.created_at`, tanggal daftar dari Runchise) pada
+        periode berjalan dan periode pembanding. Periode dihitung "to date"
+        dalam kalender WIB (mis. `month` pada 25 Sep = 1-25 Sep, dibandingkan
+        dengan 1-25 Agu). Semua Location dikembalikan, termasuk yang
+        customernya 0, diurutkan dari customer terbanyak. `period=all`
+        menghitung seluruh customer tanpa filter tanggal (sama dengan kartu
+        Total Customer); `period` berisi rentang dari customer pertama
+        mendaftar sampai hari ini, sedangkan `previous_period`,
+        `previous_total_customers`, dan `previous_customers` bernilai null.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [week, month, 3_months, year, all]
+            default: month
+      responses:
+        "200":
+          description: Customer per outlet
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/DashboardCustomersPerOutlet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/dashboard/top-redeemed-products:
+    get:
+      tags: [Dashboard]
+      summary: Loyalty product yang paling sering di-redeem
+      description: >-
+        SEMENTARA (heuristik): SaleTransaction belum menyimpan item mana yang
+        ditukar poin. Transaksi dihitung sebagai redeem sebuah loyalty product
+        bila `redeemed_point` > 0 dan >= `point_needed` produk tersebut, serta
+        `products` memuat `runchise_product_id`-nya. Produk yang dibeli normal
+        di transaksi yang juga me-redeem poin bisa ikut terhitung.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [week, month, 3_months, year]
+            default: month
+        - in: query
+          name: limit
+          description: Jumlah produk teratas, maksimal 50
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 7
+      responses:
+        "200":
+          description: Top loyalty product yang di-redeem
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/DashboardTopRedeemedProducts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/dashboard/recent-transactions:
+    get:
+      tags: [Dashboard]
+      summary: Transaksi terbaru seluruh customer
+      description: >-
+        Daftar sale transaction diurutkan dari `sales_time` terbaru (transaksi
+        tanpa `sales_time` di akhir), untuk tabel Recent Transactions.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: search
+          description: Cari berdasarkan nama customer atau sales no (case-insensitive)
+          schema:
+            type: string
+        - in: query
+          name: take
+          description: Jumlah data per halaman, maksimal 100
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: skip
+          description: Jumlah data yang dilewati
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Daftar transaksi terbaru
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/DashboardRecentTransactions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3318,6 +3500,169 @@ components:
               message:
                 type: string
 
+    DashboardMetric:
+      type: object
+      properties:
+        current_value:
+          type: integer
+          example: 16220
+        last_week_value:
+          type: integer
+          example: 15809
+
+    DashboardTotalCounts:
+      type: object
+      properties:
+        customers:
+          description: Jumlah customer yang punya outlet terdaftar (`owner_location_id` tidak null).
+          allOf:
+            - $ref: "#/components/schemas/DashboardMetric"
+        redeemed_points:
+          description: Jumlah transaksi yang me-redeem poin (bukan jumlah poin).
+          allOf:
+            - $ref: "#/components/schemas/DashboardMetric"
+        member_points:
+          description: Total `available_point` seluruh customer.
+          allOf:
+            - $ref: "#/components/schemas/DashboardMetric"
+        loyalty_products:
+          description: Jumlah loyalty product.
+          allOf:
+            - $ref: "#/components/schemas/DashboardMetric"
+
+    DashboardPeriodRange:
+      type: object
+      description: Rentang tanggal kalender WIB, inklusif.
+      properties:
+        start:
+          type: string
+          format: date
+          example: "2026-09-01"
+        end:
+          type: string
+          format: date
+          example: "2026-09-25"
+
+    DashboardCustomersPerOutlet:
+      type: object
+      properties:
+        period:
+          $ref: "#/components/schemas/DashboardPeriodRange"
+        previous_period:
+          description: Null bila `period=all`.
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DashboardPeriodRange"
+        total_customers:
+          type: integer
+          description: >-
+            Jumlah `customers` seluruh outlet (tiap customer hanya punya satu
+            outlet terdaftar).
+          example: 1848
+        previous_total_customers:
+          type: integer
+          nullable: true
+          description: Null bila `period=all`.
+          example: 1183
+        outlets:
+          type: array
+          items:
+            type: object
+            properties:
+              location_id:
+                type: string
+                format: uuid
+              location_name:
+                type: string
+                example: Jatinangor
+              customers:
+                type: integer
+                example: 350
+              previous_customers:
+                type: integer
+                nullable: true
+                description: Null bila `period=all`.
+                example: 244
+
+    DashboardTopRedeemedProducts:
+      type: object
+      properties:
+        period:
+          $ref: "#/components/schemas/DashboardPeriodRange"
+        total_redeem:
+          type: integer
+          description: Total redeem seluruh loyalty product, bukan hanya top `limit`.
+          example: 120
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              loyalty_product_id:
+                type: string
+                format: uuid
+              product_name:
+                type: string
+                example: Nikmat Spesial Crisbar
+              point_needed:
+                type: integer
+                example: 20
+              redeem_count:
+                type: integer
+                description: Jumlah transaksi redeem (bukan quantity item).
+                example: 41
+
+    DashboardRecentTransactions:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 18787
+        total_page:
+          type: integer
+          example: 752
+        transactions:
+          type: array
+          items:
+            type: object
+            properties:
+              transaction_id:
+                type: string
+                format: uuid
+              sales_no:
+                type: string
+                nullable: true
+                example: CB7BE99F
+              customer:
+                type: object
+                properties:
+                  customer_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                    example: Rameyja
+              gross_sales:
+                type: number
+                nullable: true
+                example: 29527
+              location_name:
+                type: string
+                nullable: true
+                example: Melong
+              order_type:
+                type: string
+                nullable: true
+                example: QR Table
+              net_sales_after_tax:
+                type: number
+                nullable: true
+                example: 33837
+              sales_time:
+                type: string
+                format: date-time
+                nullable: true
+
     SaleTransaction:
       type: object
       properties:
@@ -3357,6 +3702,9 @@ components:
           nullable: true
         order_type_name:
           type: string
+          nullable: true
+        point_from_transaction:
+          type: integer
           nullable: true
         total_point:
           type: integer
@@ -3400,7 +3748,7 @@ components:
           type: integer
           nullable: true
         loyalty_discount_fee:
-          type: number
+          type: string
           nullable: true
         created_at:
           type: string

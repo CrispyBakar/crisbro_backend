@@ -246,6 +246,7 @@ model SaleTransaction {
   net_sales                     Float?
   location_name                 String?
   order_type_name               String?
+  point_from_transaction        Int?
   total_point                   Int?
   earned_point                  Int?
   redeemed_point                String?
@@ -256,7 +257,7 @@ model SaleTransaction {
   sales_time                    DateTime?
   note                          String?
   applied_promos_redeemed_point String?
-  loyalty_discount_fee          Float?
+  loyalty_discount_fee          String?
   created_at                    DateTime?
   updated_at                    DateTime?
 
@@ -265,6 +266,7 @@ model SaleTransaction {
 
   @@index(location_id)
   @@index(runchise_id)
+  @@index([location_id, sales_time])
 }
 
 model Token {

@@ -14,6 +14,7 @@ const RUNCHISE_CRON_LOCK_IDS = Object.freeze({
   salesWorker: 9,
   promos: 7,
   points: 8,
+  saleTransactionsGenerateAll: 10,
 });
 
 const locallyRunning = new Set();
@@ -40,10 +41,13 @@ async function withDistributedCronLock({
   }
 
   locallyRunning.add(lockId);
-  const client = createClient();
+  let client = null;
   let lockAcquired = false;
 
   try {
+    // Dibuat di dalam try: bila gagal (mis. DIRECT_URL kosong), finally tetap
+    // melepas mutex lokal sehingga lockId tidak tertahan sampai proses restart.
+    client = createClient();
     await client.connect();
 
     const lock = await client.query(
@@ -73,7 +77,7 @@ async function withDistributedCronLock({
         });
     }
 
-    await client.end().catch((error) => {
+    await client?.end().catch((error) => {
       console.error(`[${jobName}] failed to close lock connection:`, error.message);
     });
     locallyRunning.delete(lockId);
