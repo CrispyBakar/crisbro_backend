@@ -161,6 +161,17 @@ const resendActivationTargetLimiter = createDedicatedLimiter({
   keyGenerator: customerTargetKey,
 });
 
+// Kirim ulang email verifikasi dibatasi per user (dipasang setelah `auth`),
+// supaya satu akun tidak bisa membanjiri inbox dari banyak IP.
+const emailVerificationUserLimiter = createDedicatedLimiter({
+  prefix: "email-verification-user",
+  windowMs: TWO_MINUTES,
+  max: 3,
+  message:
+    "Terlalu banyak permintaan email verifikasi. Silakan coba lagi nanti.",
+  keyGenerator: (req) => `user:${req.user?.user_id ?? "anonymous"}`,
+});
+
 // Retry sinkronisasi memanggil API eksternal. Prefix terpisah memastikan
 // pengiriman email dan retry sync tidak saling menghabiskan kuota.
 const runchiseSyncTargetLimiter = createDedicatedLimiter({
@@ -235,6 +246,7 @@ async function pruneRateLimitCounters() {
 
 module.exports = {
   authIpLimiter,
+  emailVerificationUserLimiter,
   globalLimiter,
   loginAccountKey,
   loginAccountLimiter,

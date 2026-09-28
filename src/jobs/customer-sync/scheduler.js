@@ -1,6 +1,8 @@
 const { syncQueue, pointQueue } = require("../../lib/queue");
 
 async function registerCustomerSyncScheduler() {
+  await syncQueue.removeJobScheduler("customer-sync-every-minute");
+
   return syncQueue.upsertJobScheduler(
     "customer-sync-every-minute",
     { every: 5 * 60_000 },

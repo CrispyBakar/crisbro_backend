@@ -190,11 +190,95 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /api/send-email-verification:
+    post:
+      tags: [Auth]
+      summary: Kirim ulang email verifikasi
+      description: >-
+        Membuat token baru (token lama tidak berlaku lagi) dan mengirim link
+        verifikasi ke email user yang sedang login. Email verifikasi juga
+        dikirim otomatis saat registrasi, saat admin membuat user, dan saat
+        email user/customer diganti. Rate limit: 10 permintaan/IP/2 menit dan
+        3 permintaan/user/2 menit.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Email verifikasi terkirim
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          email:
+                            type: string
+                            format: email
+                          expires_at:
+                            type: string
+                            format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Email sudah terverifikasi
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          description: SMTP belum dikonfigurasi
+
+  /api/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verifikasi email dengan token dari link email
+      description: >-
+        Publik (tidak perlu login). Link di email mengarah ke
+        `EMAIL_VERIFICATION_URL?token=...`; halaman frontend mengirim token
+        tersebut ke endpoint ini. Token sekali pakai dan berlaku
+        `EMAIL_VERIFICATION_TTL_HOURS` (default 24 jam). Rate limit: 10
+        permintaan/IP/2 menit.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
+      responses:
+        "200":
+          description: Email terverifikasi; mengembalikan data user
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/User"
+        "400":
+          description: Token tidak valid, sudah dipakai, atau kedaluwarsa
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /api/logout:
     post:
       tags: [Auth]
       summary: Keluar dari sesi saat ini
-      description: Menghapus cookie sesi `crisbar_session`.
+      description: >-
+        Menghapus baris sesi di database (token langsung tidak berlaku lagi,
+        termasuk bila dipakai sebagai Bearer) dan cookie `crisbar_session`.
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -213,14 +297,14 @@ paths:
       tags: [Auth]
       summary: Keluar dari semua sesi
       description: >-
-        Schema JWT stateless tidak menyimpan sesi per perangkat, sehingga
-        endpoint ini hanya menghapus cookie sesi saat ini.
+        Mencabut semua sesi milik user di semua perangkat, termasuk sesi saat
+        ini, lalu menghapus cookie.
       security:
         - bearerAuth: []
         - cookieAuth: []
       responses:
         "200":
-          description: Sesi saat ini dihapus
+          description: Semua sesi dicabut
           content:
             application/json:
               schema:
@@ -230,7 +314,7 @@ paths:
                     type: string
                   revoked_sessions:
                     type: integer
-                    example: 0
+                    example: 2
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -286,7 +370,8 @@ paths:
       summary: Ganti password
       description: >-
         Password baru minimal 8 karakter dan harus berbeda dari password lama.
-        Setelah berhasil, cookie sesi dihapus dan user harus login ulang.
+        Setelah berhasil, semua sesi user di semua perangkat dicabut, cookie
+        sesi dihapus, dan user harus login ulang.
         Rate limit: 10 permintaan/IP/2 menit.
       security:
         - bearerAuth: []
@@ -638,6 +723,45 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /api/customers/generate-point-history:
+    post:
+      tags: [Customers]
+      summary: Generate riwayat poin semua customer yang ada pada database
+      description: >-
+        Data customer berasal dari database crisbro yang sudah disimpan pada tabel
+        customer. Untuk setiap customer berstatus `active` yang sudah memiliki
+        `runchise_id`, riwayat poin ditarik
+        dari Runchise berdasarkan `runchise_id` lalu disimpan ke tabel riwayat
+        poin lokal. Idempoten: riwayat yang sudah ada (dikenali lewat
+        `runchise_id` riwayat) dilewati sehingga pemanggilan berulang tidak
+        menduplikasi data. Proses dapat berjalan lama karena memanggil API
+        Runchise satu per satu untuk setiap customer. Kegagalan pada satu
+        customer tidak menghentikan proses customer lain; detailnya dicatat
+        pada `errors`. Khusus admin.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: Ringkasan hasil generate riwayat poin customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomerPointGenerateSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/customers/me/point-history:
     get:
       tags: [Customers]
@@ -653,10 +777,9 @@ paths:
         - $ref: "#/components/parameters/LimitQuery"
         - in: query
           name: point_type
-          description: Filter berdasarkan tipe perubahan poin
+          description: Filter berdasarkan tipe perubahan poin (mis. earned, redeemed, manual_adjustment, adjustment_point_from_expired)
           schema:
             type: string
-            enum: [manual_adjustment, earned, redeemed]
         - in: query
           name: sort_by
           schema:
@@ -713,10 +836,9 @@ paths:
         - $ref: "#/components/parameters/LimitQuery"
         - in: query
           name: point_type
-          description: Filter berdasarkan tipe perubahan poin
+          description: Filter berdasarkan tipe perubahan poin (mis. earned, redeemed, manual_adjustment, adjustment_point_from_expired)
           schema:
             type: string
-            enum: [manual_adjustment, earned, redeemed]
         - in: query
           name: sort_by
           schema:
@@ -1312,7 +1434,11 @@ paths:
     patch:
       tags: [Users]
       summary: Update user
-      description: Minimal satu field harus dikirim.
+      description: >-
+        Minimal satu field harus dikirim. Bila `password` diganti, semua sesi
+        user tersebut dicabut. Bila `email` diganti, email baru wajib
+        berdomain `@crisbar.id` (422 bila tidak), `email_verified` menjadi
+        false, dan email verifikasi dikirim ke alamat baru.
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -1348,6 +1474,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/users/{user_id}/sessions:
+    delete:
+      tags: [Users]
+      summary: Paksa logout user dari semua perangkat
+      description: Khusus admin. Mencabut semua sesi aktif milik user.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdPath"
+      responses:
+        "200":
+          description: Sesi user dicabut
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          revoked_sessions:
+                            type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -2527,7 +2687,6 @@ components:
         point_type:
           type: string
           nullable: true
-          enum: [manual_adjustment, earned, redeemed]
         point_snapshot:
           type: integer
           nullable: true
@@ -3495,6 +3654,38 @@ components:
           items:
             type: object
             properties:
+              runchise_id:
+                type: integer
+              message:
+                type: string
+
+    CustomerPointGenerateSummary:
+      type: object
+      properties:
+        total_customer:
+          type: integer
+          description: >-
+            Jumlah customer aktif yang sudah terhubung ke Runchise dan diproses
+          example: 120
+        total_history:
+          type: integer
+          description: >-
+            Jumlah riwayat poin baru yang disimpan ke database lokal (riwayat
+            yang sudah ada tidak dihitung)
+          example: 3450
+        failed:
+          type: integer
+          description: Jumlah customer yang gagal diproses
+          example: 0
+        errors:
+          type: array
+          description: Detail kegagalan per customer
+          items:
+            type: object
+            properties:
+              customer_id:
+                type: string
+                format: uuid
               runchise_id:
                 type: integer
               message:

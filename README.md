@@ -54,6 +54,8 @@ Buat file `.env` di root folder backend. Jangan commit file ini.
 | `QONTAK_DEV_CLIENT_ID`, `QONTAK_DEV_CLIENT_SECRET` | Kredensial Qontak environment dev |
 | `QONTAK_TEMPLATE_ID`, `QONTAK_CHANNEL_ID` | Template pesan & channel WhatsApp |
 | `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE` | Pengiriman email |
+| `EMAIL_VERIFICATION_URL` | Halaman frontend untuk link verifikasi email (default `FRONTEND_URL/verify-email`); token ditambahkan sebagai `?token=` |
+| `EMAIL_VERIFICATION_TTL_HOURS` | Masa berlaku link verifikasi email (default 24) |
 | `REFERRAL_VALIDATION_URL` | URL yang dicantumkan pada alur validasi referral |
 
 ### Redis (khusus worker)
@@ -76,10 +78,10 @@ Buat file `.env` di root folder backend. Jangan commit file ini.
 | `SESSION_COOKIE_NAME` | `crisbar_session` | |
 | `SESSION_COOKIE_SAME_SITE` | `none` (prod) / `strict` (dev) | |
 | `JWT_EXPIRES_IN` | `7d` | Batas absolut sesi customer |
-| `CUSTOMER_SESSION_IDLE_DAYS` | `7` | |
+| `CUSTOMER_SESSION_IDLE_DAYS` | `7` | Idle timeout customer (dicek via tabel `Session`) |
 | `ADMIN_SESSION_IDLE_MINUTES` | `480` | Idle timeout staff (admin/marketing) |
 | `ADMIN_SESSION_ABSOLUTE_HOURS` | `24` | Batas absolut sesi staff |
-| `SESSION_RENEW_INTERVAL_MINUTES` | `5` | |
+| `SESSION_RENEW_INTERVAL_MINUTES` | `5` | Selisih minimum sebelum `Session.expires_at` digeser (menghindari UPDATE tiap request) |
 | `API_DOCS_ENABLED` | `false` | Buka Swagger di production (wajib dengan `API_DOCS_USER` + `API_DOCS_PASSWORD`) |
 
 ## NPM Scripts
@@ -139,12 +141,12 @@ di development, tertutup (404) di production kecuali `API_DOCS_ENABLED=true`.
 
 | Grup | Path | Akses |
 | --- | --- | --- |
-| Auth | `POST /register`, `POST /login`, `POST /send-otp`, `POST /verify-otp`, `POST /logout`, `POST /logout-all`, `POST /change-password` | Publik / login |
+| Auth | `POST /register`, `POST /login`, `POST /send-otp`, `POST /verify-otp`, `POST /send-email-verification`, `POST /verify-email`, `POST /logout`, `POST /logout-all`, `POST /change-password` | Publik / login |
 | Profil | `GET /profile` (customer), `GET /me` (staff) | Login |
 | Customer (self) | `GET/PATCH /customers/me`, `GET /customers/me/point-history` | customer |
 | Customer (kelola) | `GET /customers`, `GET/PATCH /customers/:customer_id`, `PATCH /customers/:customer_id/status`, `GET /customers/:customer_id/point-history`, `GET /customers/user/:user_id` | admin, marketing |
 | Customer sync | `POST /customers/generate` | admin |
-| Staff user | `POST /users`, `PATCH /users/:user_id` | admin |
+| Staff user | `POST /users`, `PATCH /users/:user_id`, `DELETE /users/:user_id/sessions` | admin |
 | Referral | `POST /referral/generate`, `PATCH /referral/renew` | customer |
 | | `GET /referral/usages`, `PATCH /referral/validate/:user_id` | admin, marketing |
 | Produk | `GET /products/loyalty` | Login |

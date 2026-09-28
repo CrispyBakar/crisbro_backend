@@ -19,11 +19,25 @@ const {
   getUserProfile,
   changeUserPassword,
 } = require("../services/auth.service");
+const {
+  EmailVerificationError,
+  resendEmailVerification,
+  verifyEmailToken,
+} = require("../services/emailVerification.service");
+const {
+  revokeSession,
+  revokeUserSessions,
+} = require("../services/session.service");
 
 function serializeAuthUser(user) {
   if (!user) return user;
 
-  const { password_hash, ...safeUser } = user;
+  const {
+    password_hash,
+    email_verification_token,
+    email_verification_expires,
+    ...safeUser
+  } = user;
   if (safeUser.email === null) delete safeUser.email;
   if (safeUser.phone_number === null) delete safeUser.phone_number;
 
@@ -38,7 +52,10 @@ function serializeAuthUser(user) {
 }
 
 function handleAuthError(res, error, context) {
-  if (error instanceof AuthServiceError) {
+  if (
+    error instanceof AuthServiceError ||
+    error instanceof EmailVerificationError
+  ) {
     return res.status(error.statusCode).json({
       success: false,
       message: error.message,
@@ -108,9 +125,40 @@ async function otpCodeValidation(req, res) {
   }
 }
 
+async function sendEmailVerification(req, res) {
+  try {
+    const data = await resendEmailVerification(req.user?.user_id);
+    return successRequest({
+      res,
+      code: 200,
+      data,
+      message: "Email verifikasi berhasil dikirim",
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "Pengiriman email verifikasi gagal");
+  }
+}
+
+async function verifyEmail(req, res) {
+  try {
+    const user = await verifyEmailToken(req.body?.token);
+    return successRequest({
+      res,
+      code: 200,
+      data: serializeAuthUser(user),
+      message: "Email berhasil diverifikasi",
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "Verifikasi email gagal");
+  }
+}
+
 async function login(req, res) {
   try {
-    const result = await authenticateUser(req.body ?? {});
+    const result = await authenticateUser(req.body ?? {}, {
+      userAgent: req.get("user-agent"),
+      ipAddress: req.ip,
+    });
     setSessionCookie(res, result.token, result.expiresAt);
 
     return res.json({
@@ -172,24 +220,35 @@ async function changePassword(req, res) {
   }
 }
 
-function logout(req, res) {
-  clearSessionCookie(res);
-  return res.json({ message: "Berhasil keluar" });
+async function logout(req, res) {
+  try {
+    await revokeSession(req.user?.session_id);
+    clearSessionCookie(res);
+    return res.json({ message: "Berhasil keluar" });
+  } catch (error) {
+    return handleAuthError(res, error, "Logout gagal");
+  }
 }
 
-function logoutAllSessions(req, res) {
-  // Schema aktif menggunakan JWT stateless dan tidak memiliki model Session.
-  clearSessionCookie(res);
-  return res.json({
-    message: "Berhasil keluar dari sesi saat ini",
-    revoked_sessions: 0,
-  });
+async function logoutAllSessions(req, res) {
+  try {
+    const revoked = await revokeUserSessions(req.user?.user_id);
+    clearSessionCookie(res);
+    return res.json({
+      message: "Berhasil keluar dari semua sesi",
+      revoked_sessions: revoked,
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "Logout semua sesi gagal");
+  }
 }
 
 module.exports = {
   register,
   sendOnlyOtpCode,
   otpCodeValidation,
+  sendEmailVerification,
+  verifyEmail,
   login,
   logout,
   logoutAllSessions,

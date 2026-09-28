@@ -8,7 +8,11 @@ const {
   requireValidPhone,
   requireRole,
 } = require("../middleware/authMiddleware");
-const { authIpLimiter, loginAccountLimiter } = require("../lib/rateLimit");
+const {
+  authIpLimiter,
+  loginAccountLimiter,
+  emailVerificationUserLimiter,
+} = require("../lib/rateLimit");
 const {
   register,
   login,
@@ -18,6 +22,8 @@ const {
   changePassword,
   sendOnlyOtpCode,
   otpCodeValidation,
+  sendEmailVerification,
+  verifyEmail,
 } = require("../controllers/auth.controller");
 
 // ===================== REGISTER =====================
@@ -31,6 +37,17 @@ router.post("/send-otp", authIpLimiter, auth, sendOnlyOtpCode);
 
 // ===================== VERIFY OTP ===================
 router.post("/verify-otp", authIpLimiter, auth, otpCodeValidation);
+
+// ================= EMAIL VERIFICATION =================
+router.post(
+  "/send-email-verification",
+  authIpLimiter,
+  auth,
+  emailVerificationUserLimiter,
+  sendEmailVerification,
+);
+// Publik: token dari link email adalah buktinya, user belum tentu login.
+router.post("/verify-email", authIpLimiter, verifyEmail);
 
 // ===================== LOGOUT =====================
 router.post("/logout", auth, logout);

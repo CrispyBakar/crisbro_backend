@@ -12,6 +12,7 @@ const {
   getCustomerPointHistory,
   getMyPointHistory,
   generateCustomers,
+  generateAllCustomerPoint,
 } = require("../controllers/customer.controller");
 
 const adminOnly = requireRole("admin");
@@ -32,11 +33,12 @@ router.post("/generate", adminOnly, generateCustomers);
 router.get("/user/:user_id", adminOrMarketing, getCustomerByUser);
 router.get("/:customer_id", adminOrMarketing, getCustomer);
 router.patch("/:customer_id", adminOrMarketing, updateCustomer);
-router.patch(
-  "/:customer_id/status",
+router.patch("/:customer_id/status", adminOrMarketing, changeCustomerStatus);
+router.post("/generate-point-history", adminOnly, generateAllCustomerPoint);
+router.get(
+  "/:customer_id/point-history",
   adminOrMarketing,
-  changeCustomerStatus,
+  getCustomerPointHistory,
 );
-router.get("/:customer_id/point-history", adminOrMarketing, getCustomerPointHistory);
 
 module.exports = router;

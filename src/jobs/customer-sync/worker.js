@@ -17,6 +17,7 @@ const {
   updateCustomerPointHistory,
 } = require("../../services/customer.service");
 const { customerProcessHandler } = require("./customerProcess");
+const { withRunchiseRetry } = require("../../lib/runchiseRetry");
 
 const worker = new Worker(
   "customer-sync",
@@ -115,6 +116,11 @@ const worker = new Worker(
       ),
     );
 
+    console.info(
+      "Success worker customer-sync from transactions. Transactions length: ",
+      transactions.length,
+    );
+
     return { processed: transactions.length };
   },
   {
@@ -139,35 +145,56 @@ const workerDaily = new Worker(
       },
     });
 
+    let updated = 0;
+    let failed = 0;
+
     for (const customer of customers) {
-      const runchiseCustomer = await findCustomerByPhone({
-        phone: customer.phone_number,
-      });
-      if (!runchiseCustomer) continue;
+      // Kegagalan satu customer (mis. Runchise 503 setelah retry habis)
+      // tidak menghentikan proses customer lainnya
+      try {
+        const runchiseCustomer = await withRunchiseRetry(() =>
+          findCustomerByPhone({ phone: customer.phone_number }),
+        );
+        if (!runchiseCustomer) continue;
 
-      // Updated customer data point
-      await prisma.customer.update({
-        where: { customer_id: customer.customer_id },
-        data: {
-          name: runchiseCustomer.name,
-          phone_number: runchiseCustomer.phone_number,
-          address: runchiseCustomer.address,
-          balance: runchiseCustomer.balance,
-          province: runchiseCustomer.province,
-          city: runchiseCustomer.city,
-          country: runchiseCustomer.country,
-          postal_code: runchiseCustomer.postal_code,
-          gender: runchiseCustomer.gender,
-          runchise_id: runchiseCustomer.id,
-          available_point: runchiseCustomer.available_point,
-          total_point: runchiseCustomer.total_point,
-          runchise_synced_at: new Date(),
-        },
-      });
+        // Updated customer data point
+        await prisma.customer.update({
+          where: { customer_id: customer.customer_id },
+          data: {
+            name: runchiseCustomer.name,
+            phone_number: runchiseCustomer.phone_number,
+            address: runchiseCustomer.address,
+            balance: runchiseCustomer.balance,
+            province: runchiseCustomer.province,
+            city: runchiseCustomer.city,
+            country: runchiseCustomer.country,
+            postal_code: runchiseCustomer.postal_code,
+            gender: runchiseCustomer.gender,
+            runchise_id: runchiseCustomer.id,
+            available_point: runchiseCustomer.available_point,
+            total_point: runchiseCustomer.total_point,
+            runchise_synced_at: new Date(),
+          },
+        });
 
-      // Update customer points history
-      await updateCustomerPointHistory(customer.customer_id);
+        // Update customer points history
+        await updateCustomerPointHistory(customer.customer_id);
+
+        updated++;
+        console.info(
+          "Berhasil mengupdate customer dan history point, phone: ",
+          customer.phone_number,
+        );
+      } catch (error) {
+        failed++;
+        console.error(
+          `Gagal sync point customer ${customer.customer_id} (phone: ${customer.phone_number}):`,
+          error.message,
+        );
+      }
     }
+
+    return { total: customers.length, updated, failed };
   },
   {
     connection,
@@ -180,11 +207,13 @@ workerDaily.on("error", (error) => {
 });
 
 workerDaily.on("failed", (job, error) => {
-  console.error(`Customer sync job ${job?.id} gagal: ${error}`);
+  console.error(`Customer point daily job ${job?.id} gagal: ${error}`);
 });
 
-workerDaily.on("completed", (complete) => {
-  console.info(`Customer sync point history completed: ${complete}`);
+workerDaily.on("completed", (job, result) => {
+  console.info(
+    `Customer sync point history completed: ${JSON.stringify(result)}`,
+  );
 });
 
 registeredCustomerSyncPointHistory()

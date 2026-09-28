@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
 const { withDbRetry } = require("../lib/dbRetry");
+const { withRunchiseRetry } = require("../lib/runchiseRetry");
 const {
   updateCustomer,
   getListCustomerPointHistory,
@@ -9,6 +10,10 @@ const {
   generateAllCustomerHasPoint,
 } = require("./runchise.service");
 const { buildLocalCustomerData } = require("./auth.service");
+const {
+  createEmailVerificationToken,
+  deliverEmailVerificationSafely,
+} = require("./emailVerification.service");
 
 const ALLOWED_SORT_FIELDS = ["created_at", "name", "phone_number", "status"];
 const POINT_HISTORY_SORT_FIELDS = ["formatted_created_at", "issued_at_time"];
@@ -230,6 +235,8 @@ async function updateCustomerById(customer_id, payload) {
       );
     }
 
+    const verification = emailChanged ? createEmailVerificationToken() : null;
+
     let updated;
     try {
       if (phoneChanged || emailChanged) {
@@ -252,7 +259,7 @@ async function updateCustomerById(customer_id, payload) {
           }
           if (emailChanged) {
             // Email baru menandai verifikasi email ulang
-            Object.assign(userData, { email: email, email_verified: false });
+            Object.assign(userData, { email: email }, verification.fields);
           }
 
           await tx.user.update({
@@ -276,6 +283,15 @@ async function updateCustomerById(customer_id, payload) {
       throw localError;
     }
 
+    if (verification) {
+      await deliverEmailVerificationSafely({
+        to: email,
+        name: updated.name,
+        token: verification.token,
+        expiresAt: verification.expiresAt,
+      });
+    }
+
     return updated;
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
@@ -294,7 +310,9 @@ async function updateCustomerPointHistory(customer_id) {
 
     if (!customer) throw new Error("Customer not found");
 
-    const histories = await getListCustomerPointHistory(customer.runchise_id);
+    const histories = await withRunchiseRetry(() =>
+      getListCustomerPointHistory(customer.runchise_id),
+    );
 
     if (histories.length === 0) return;
 
@@ -334,6 +352,42 @@ async function updateCustomerPointHistory(customer_id) {
     });
 
     return result;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+async function updateAllCustomerPointHistory() {
+  try {
+    // Customer tanpa runchise_id tidak punya riwayat poin di Runchise
+    const customers = await prisma.customer.findMany({
+      where: { status: "active", runchise_id: { not: null } },
+      select: { customer_id: true, runchise_id: true },
+    });
+
+    let totalHistory = 0;
+    const errors = [];
+    for (const customer of customers) {
+      // Kegagalan satu customer (mis. timeout Runchise) tidak menghentikan
+      // proses customer lainnya
+      try {
+        const result = await updateCustomerPointHistory(customer.customer_id);
+        totalHistory += result?.count ?? 0;
+      } catch (error) {
+        errors.push({
+          customer_id: customer.customer_id,
+          runchise_id: customer.runchise_id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return {
+      total_customer: customers.length,
+      total_history: totalHistory,
+      failed: errors.length,
+      errors,
+    };
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -603,6 +657,7 @@ module.exports = {
   getCustomerByUserId,
   updateCustomerById,
   updateCustomerPointHistory,
+  updateAllCustomerPointHistory,
   listCustomerPointHistory,
   changeStatusCustomer,
   generateAllCustomerRunchise,

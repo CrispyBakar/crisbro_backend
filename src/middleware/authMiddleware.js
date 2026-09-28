@@ -6,6 +6,10 @@ const {
   getSessionCookie,
   clearSessionCookie,
 } = require("../lib/sessionCookie");
+const {
+  findActiveSession,
+  touchSession,
+} = require("../services/session.service");
 
 // Middleware untuk memverifikasi token JWT pada setiap request
 const auth = async (req, res, next) => {
@@ -25,29 +29,14 @@ const auth = async (req, res, next) => {
     });
   }
 
+  let decoded;
   try {
     // Memverifikasi token menggunakan JWT_SECRET
-    const decoded = jwt.verify(token, getJwtSecret());
+    decoded = jwt.verify(token, getJwtSecret());
 
     if (!decoded.user_id) {
       throw new jwt.JsonWebTokenError("Token tidak memiliki user_id");
     }
-
-    // Model Session tidak ada pada schema aktif. Validasi user memastikan token
-    // milik akun yang sudah dihapus tidak tetap diterima.
-    const user = await prisma.user.findUnique({
-      where: { user_id: decoded.user_id },
-      select: { user_id: true, role: true },
-    });
-
-    if (!user) {
-      if (cookieToken) clearSessionCookie(res);
-      return res.status(401).json({ message: "User tidak ditemukan" });
-    }
-
-    // `id` dipertahankan sementara untuk controller lama; primary key schema
-    // saat ini bernama `user_id`.
-    req.user = { ...decoded, id: user.user_id, user_id: user.user_id };
   } catch (error) {
     if (cookieToken) clearSessionCookie(res);
     // Menangani jika JWT_SECRET belum dikonfigurasi
@@ -69,6 +58,40 @@ const auth = async (req, res, next) => {
       message: "Invalid or expired token",
     });
   }
+
+  // JWT yang sah saja tidak cukup: token harus masih punya baris Session.
+  // Logout, logout-all, ganti password, revoke admin, idle timeout, dan
+  // penghapusan user (cascade) semuanya bekerja dengan menghapus baris ini.
+  // Error database diteruskan ke error handler (500) dan cookie tidak dihapus,
+  // supaya gangguan database sesaat tidak membuat semua user ter-logout.
+  let session;
+  try {
+    session = await findActiveSession(token, decoded.user_id);
+  } catch (error) {
+    return next(error);
+  }
+
+  if (!session) {
+    if (cookieToken) clearSessionCookie(res);
+    return res
+      .status(401)
+      .json({ message: "Sesi berakhir, silakan login kembali" });
+  }
+
+  const { user } = session;
+  const tokenExpMs =
+    typeof decoded.exp === "number" ? decoded.exp * 1000 : Number.NaN;
+  await touchSession(session, { role: user.role, tokenExpMs });
+
+  // Role diambil dari database, bukan klaim JWT, supaya perubahan role oleh
+  // admin langsung berlaku. `id` dipertahankan untuk controller lama.
+  req.user = {
+    ...decoded,
+    role: user.role,
+    id: user.user_id,
+    user_id: user.user_id,
+    session_id: session.session_id,
+  };
 
   return next();
 };

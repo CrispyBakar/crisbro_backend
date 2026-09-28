@@ -12,6 +12,7 @@ const {
   listCustomerPointHistory,
   changeStatusCustomer,
   generateAllCustomerRunchise,
+  updateAllCustomerPointHistory,
 } = require("../services/customer.service");
 const {
   updateCustomerSchema,
@@ -36,7 +37,7 @@ const updateMyCustomerSchema = updateCustomerSchema.omit({
 const listPointHistoryQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(10),
-  point_type: z.enum(["manual_adjustment", "earned", "redeemed"]).optional(),
+  point_type: z.string().trim().min(1).optional(),
   sort_by: z
     .enum(["formatted_created_at", "issued_at_time"])
     .default("formatted_created_at"),
@@ -128,9 +129,7 @@ async function updateCustomer(req, res) {
 
   const payload = {
     ...(req.body ?? {}),
-    ...(req.user?.user_id
-      ? { last_updated_by_id: req.user.user_id }
-      : {}),
+    ...(req.user?.user_id ? { last_updated_by_id: req.user.user_id } : {}),
   };
   const bodyValidation = updateCustomerSchema.safeParse(payload);
 
@@ -177,7 +176,8 @@ async function updateCustomer(req, res) {
     if (
       error.message === "No valid fields to update" ||
       error.message === "No valid Runchise fields to update" ||
-      error.message === "Customer belum terhubung ke Runchise, tidak bisa update"
+      error.message ===
+        "Customer belum terhubung ke Runchise, tidak bisa update"
     ) {
       return badRequest({ res, code: 422, error: error.message });
     }
@@ -215,7 +215,10 @@ async function changeCustomerStatus(req, res) {
       return badRequest({ res, code: 404, error: error.message });
     }
 
-    if (error.message === "Customer belum terhubung ke Runchise, tidak bisa update") {
+    if (
+      error.message ===
+      "Customer belum terhubung ke Runchise, tidak bisa update"
+    ) {
       return badRequest({ res, code: 422, error: error.message });
     }
 
@@ -237,7 +240,11 @@ async function getMyCustomer(req, res) {
       message: "Customer profile retrieved successfully.",
     });
   } catch (error) {
-    return respondWithServerError(res, error, "Get own customer profile failed");
+    return respondWithServerError(
+      res,
+      error,
+      "Get own customer profile failed",
+    );
   }
 }
 
@@ -293,12 +300,17 @@ async function updateMyCustomer(req, res) {
     if (
       error.message === "No valid fields to update" ||
       error.message === "No valid Runchise fields to update" ||
-      error.message === "Customer belum terhubung ke Runchise, tidak bisa update"
+      error.message ===
+        "Customer belum terhubung ke Runchise, tidak bisa update"
     ) {
       return badRequest({ res, code: 422, error: error.message });
     }
 
-    return respondWithServerError(res, error, "Update own customer profile failed");
+    return respondWithServerError(
+      res,
+      error,
+      "Update own customer profile failed",
+    );
   }
 }
 
@@ -389,6 +401,24 @@ async function generateCustomers(req, res) {
   }
 }
 
+async function generateAllCustomerPoint(req, res) {
+  try {
+    const summary = await updateAllCustomerPointHistory();
+
+    return successRequest({
+      res,
+      data: summary,
+      message: "Customer points berhasil digenerate dari Runchise",
+    });
+  } catch (error) {
+    return respondWithServerError(
+      res,
+      error,
+      "Generate customers points failed",
+    );
+  }
+}
+
 module.exports = {
   listCustomers,
   getCustomer,
@@ -398,6 +428,7 @@ module.exports = {
   getMyCustomer,
   updateMyCustomer,
   getCustomerPointHistory,
+  generateAllCustomerPoint,
   getMyPointHistory,
   generateCustomers,
 };
