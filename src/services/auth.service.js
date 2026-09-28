@@ -1,3 +1,4 @@
+const crypto = require("node:crypto");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const prisma = require("../lib/prisma");
@@ -5,6 +6,11 @@ const getJwtSecret = require("../lib/jwtSecret");
 const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
 const { getSessionPolicy } = require("../lib/sessionPolicy");
 const { sendReferralValidationEmail } = require("./email.service");
+const {
+  createEmailVerificationToken,
+  deliverEmailVerificationSafely,
+} = require("./emailVerification.service");
+const { createSession, revokeUserSessions } = require("./session.service");
 const { findCustomerByPhone, createCustomer } = require("./runchise.service");
 const {
   generateSaleTransactionsFromRunchise,
@@ -130,6 +136,7 @@ async function registerUser(data) {
   }
 
   const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+  const verification = createEmailVerificationToken();
   const { user, referral } = await prisma.$transaction(async (tx) => {
     // Public registration always creates a customer account. Privileged roles
     // must be provisioned through an authenticated administrative flow.
@@ -140,6 +147,7 @@ async function registerUser(data) {
         phone: data.phone,
         role: "customer",
         password_hash: passwordHash,
+        ...verification.fields,
       },
     });
 
@@ -232,8 +240,6 @@ async function registerUser(data) {
       username: true,
       phone: true,
       role: true,
-      email_verification_token: true,
-      email_verification_expires: true,
       email_verified: true,
       referral_code: true,
       no_referensi: true,
@@ -242,6 +248,13 @@ async function registerUser(data) {
       created_at: true,
       updated_at: true,
     },
+  });
+
+  await deliverEmailVerificationSafely({
+    to: userWithReference.email,
+    name: data.name,
+    token: verification.token,
+    expiresAt: verification.expiresAt,
   });
 
   const defaultText = `AKTIVASI CRISBRO\nHarap kirim pesan ini tanpa merubah apapun.\nNo.ref:${userWithReference.no_referensi}`;
@@ -368,7 +381,10 @@ function parseLoginIdentity({ email: rawEmail, phone: rawPhone }) {
   return { email, phone, isEmailLogin };
 }
 
-async function authenticateUser({ email, phone, password }) {
+async function authenticateUser(
+  { email, phone, password },
+  { userAgent, ipAddress } = {},
+) {
   if (typeof password !== "string" || password.trim() === "") {
     throw new AuthServiceError(400, "Password wajib diisi");
   }
@@ -409,16 +425,27 @@ async function authenticateUser({ email, phone, password }) {
   if (!user) throw new AuthServiceError(401, INVALID_CREDENTIALS_MESSAGE);
 
   const sessionPolicy = getSessionPolicy(user.role);
+  // `jwtid` acak membuat setiap login menghasilkan token (dan token_hash)
+  // berbeda walau dua login terjadi pada detik yang sama.
   const token = jwt.sign(
     { user_id: user.user_id, role: user.role },
     getJwtSecret(),
-    { expiresIn: sessionPolicy.absoluteExpiresIn },
+    { expiresIn: sessionPolicy.absoluteExpiresIn, jwtid: crypto.randomUUID() },
   );
   const decodedToken = jwt.decode(token);
   const tokenExpMs =
     decodedToken && typeof decodedToken.exp === "number"
       ? decodedToken.exp * 1000
       : Date.now() + sessionPolicy.idleMs;
+
+  await createSession({
+    userId: user.user_id,
+    role: user.role,
+    token,
+    tokenExpMs,
+    userAgent,
+    ipAddress,
+  });
 
   return {
     token,
@@ -456,9 +483,14 @@ async function changeUserPassword(userId, currentPassword, newPassword) {
   if (!validPassword) throw new AuthServiceError(401, "Password lama salah");
 
   const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-  await prisma.user.update({
-    where: { user_id: user.user_id },
-    data: { password_hash: passwordHash },
+  // Semua sesi (termasuk sesi saat ini) dicabut bersamaan dengan pergantian
+  // password, sehingga token yang mungkin bocor ikut tidak berlaku.
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { user_id: user.user_id },
+      data: { password_hash: passwordHash },
+    });
+    await revokeUserSessions(user.user_id, tx);
   });
 }
 

@@ -623,6 +623,29 @@ async function getListPromoCodes(runchise_promo_id) {
   }
 }
 
+const RETRYABLE_STATUS = [500, 503];
+const MAX_RETRIES = 3;
+
+// GET ke runchise, retry dengan url/params yang sama kalau server balas 500/503
+async function getWithRetry(url) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await runchiseClient.get(url);
+    } catch (error) {
+      const status = error.response?.status;
+      if (!RETRYABLE_STATUS.includes(status) || attempt >= MAX_RETRIES) {
+        throw error;
+      }
+
+      const delay = 3000 * 2 ** attempt; // 3s, 6s, 12s
+      console.log(
+        `Runchise ${status} pada ${url}, retry ${attempt + 1}/${MAX_RETRIES} dalam ${delay / 1000} detik`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function getListSaleTransactionSummary(lastIdsByLocation = {}) {
   const location_ids = await findAllLocationIds();
   const date = new Date();
@@ -650,7 +673,7 @@ async function getListSaleTransactionSummary(lastIdsByLocation = {}) {
           ...(cursor ? { last_id: cursor } : {}),
         });
 
-        const response = await runchiseClient.get(
+        const response = await getWithRetry(
           `/sale_transactions/summaries?${params}`,
         );
         const data = response.data.data ?? [];
@@ -677,6 +700,9 @@ async function getListSaleTransactionSummary(lastIdsByLocation = {}) {
           cursor = lastRecord.id; // lanjut mundur dari record paling lama di halaman ini
           // opsional: kalau data.length < page_size dari API, berarti sudah halaman terakhir
         }
+
+        // Delay 1 detik sebelum lanjut
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       if (newestIdThisRun !== null) {

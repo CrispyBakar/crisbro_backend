@@ -58,12 +58,32 @@ model User {
   updated_at                 DateTime   @updatedAt
 
   referral_program    ReferralProgram?
+  sessions            Session[]
   customer            Customer?          @relation("UserToCustomer")
   created_customers   Customer[]         @relation("CreatedBy")
   updated_customers   Customer[]         @relation("LastUpdatedBy")
   admin_activity_logs AdminActivityLog[]
   referrals_made      Referral[]         @relation("Referrer")
   received_referrals  Referral[]         @relation("Referred")
+}
+
+// Satu baris per login. JWT tetap membawa batas absolut; baris ini yang
+// menentukan apakah token masih boleh dipakai (logout/revoke = hapus baris)
+// dan menyimpan batas idle yang bergeser (`expires_at`).
+model Session {
+  session_id   String   @id @default(uuid())
+  user_id      String
+  token_hash   String   @unique
+  expires_at   DateTime
+  user_agent   String?
+  ip_address   String?
+  last_used_at DateTime @default(now())
+  created_at   DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
 }
 
 model AdminActivityLog {
@@ -407,7 +427,7 @@ model CustomerPointHistory {
   customer_id              String  
   runchise_id              Int?    @unique
   customer_point_id        Int?
-  point_type               PointType?
+  point_type               String?
   point_snapshot           Int?
   point                    Int?
   sale_transaction_uuid    String?
@@ -456,10 +476,4 @@ model Products {
 
 enum JobCategory {
   sale_transactions
-}
-
-enum PointType {
-  manual_adjustment
-  earned
-  redeemed
 }

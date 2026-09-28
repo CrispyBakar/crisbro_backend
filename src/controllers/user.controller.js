@@ -7,6 +7,7 @@ const {
 const {
   createUserService,
   updateUserService,
+  revokeUserSessionsService,
 } = require("../services/user.service");
 const {
   createUserSchema,
@@ -15,9 +16,11 @@ const {
 
 const uuidSchema = z.string().uuid("ID must be a valid UUID");
 
-const DUPLICATE_CREATE_MESSAGE = "User with username/email/phone has been created.";
+const DUPLICATE_CREATE_MESSAGE =
+  "User with username/email/phone has been created.";
 const DUPLICATE_UPDATE_MESSAGE =
   "Email/username/phone/referral code/no referensi sudah dipakai user lain";
+const INVALID_EMAIL_DOMAIN_MESSAGE = "Email harus menggunakan domain @crisbar.id";
 
 function validationError(res, error) {
   return badRequest({
@@ -111,7 +114,10 @@ async function updateUser(req, res) {
       return badRequest({ res, code: 409, error: error.message });
     }
 
-    if (error.message === "No valid fields to update") {
+    if (
+      error.message === "No valid fields to update" ||
+      error.message === INVALID_EMAIL_DOMAIN_MESSAGE
+    ) {
       return badRequest({ res, code: 422, error: error.message });
     }
 
@@ -119,4 +125,28 @@ async function updateUser(req, res) {
   }
 }
 
-module.exports = { createUser, updateUser };
+async function revokeUserSessions(req, res) {
+  const idValidation = uuidSchema.safeParse(req.params.user_id);
+
+  if (!idValidation.success) {
+    return validationError(res, idValidation.error);
+  }
+
+  try {
+    const revoked = await revokeUserSessionsService(idValidation.data);
+
+    return successRequest({
+      res,
+      data: { revoked_sessions: revoked },
+      message: "All user sessions revoked.",
+    });
+  } catch (error) {
+    if (error.message === "User not found") {
+      return badRequest({ res, code: 404, error: error.message });
+    }
+
+    return respondWithServerError(res, error, "Revoke user sessions failed");
+  }
+}
+
+module.exports = { createUser, updateUser, revokeUserSessions };

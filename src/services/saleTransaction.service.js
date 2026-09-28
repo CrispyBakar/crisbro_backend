@@ -1,7 +1,7 @@
-const axios = require("axios");
 const { Prisma } = require("@prisma/client");
 const prisma = require("../lib/prisma");
 const { withDbRetry } = require("../lib/dbRetry");
+const { withRunchiseRetry } = require("../lib/runchiseRetry");
 const {
   withDistributedCronLock,
   RUNCHISE_CRON_LOCK_IDS,
@@ -125,16 +125,16 @@ async function generateSaleTransactionsFromRunchise(customer_id) {
     );
   }
 
-  const transactionsSummary = await listSaleTransactionByCustomerId(
-    customer.runchise_id,
+  const transactionsSummary = await withRunchiseRetry(() =>
+    listSaleTransactionByCustomerId(customer.runchise_id),
   );
 
   const runchise_transactions_ids = transactionsSummary.map((tr) => tr.id);
 
   const transactions = [];
   for (const index in runchise_transactions_ids) {
-    const result = await getDetailSaleTransaction(
-      runchise_transactions_ids[index],
+    const result = await withRunchiseRetry(() =>
+      getDetailSaleTransaction(runchise_transactions_ids[index]),
     );
     transactions.push(result);
   }
@@ -193,55 +193,9 @@ async function generateSaleTransactionsFromRunchise(customer_id) {
 const RUNCHISE_HTTP_CONCURRENCY = 5;
 const CUSTOMER_CONCURRENCY = 5;
 const INSERT_CHUNK_SIZE = 200;
-const RUNCHISE_MAX_RETRIES = 3;
-const RUNCHISE_RETRY_BASE_DELAY_MS = 1_000;
-const RUNCHISE_RETRY_MAX_DELAY_MS = 30_000;
 // Ringkasan dikirim sebagai response HTTP; daftar error dibatasi agar tidak
 // membengkak saat Runchise down dan ribuan customer gagal.
 const MAX_REPORTED_ERRORS = 50;
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// getDetailSaleTransaction membungkus AxiosError ke dalam `cause`, sedangkan
-// listSaleTransactionByCustomerId melempar AxiosError apa adanya.
-function getAxiosError(error) {
-  if (axios.isAxiosError(error)) return error;
-  if (axios.isAxiosError(error?.cause)) return error.cause;
-  return null;
-}
-
-// Hanya error jaringan/timeout, 429, dan 5xx yang layak diulang; 4xx lain
-// (mis. transaksi tidak ditemukan) akan gagal lagi dengan hasil yang sama.
-function isTransientRunchiseError(error) {
-  const axiosError = getAxiosError(error);
-  if (!axiosError) return false;
-  const status = axiosError.response?.status;
-  return status === undefined || status === 429 || status >= 500;
-}
-
-function getRetryDelayMs(error, attempt) {
-  const retryAfterSeconds = Number(
-    getAxiosError(error)?.response?.headers?.["retry-after"],
-  );
-  const backoff = RUNCHISE_RETRY_BASE_DELAY_MS * 2 ** attempt;
-  const delay = Number.isFinite(retryAfterSeconds)
-    ? Math.max(backoff, retryAfterSeconds * 1_000)
-    : backoff;
-  return Math.min(delay, RUNCHISE_RETRY_MAX_DELAY_MS);
-}
-
-async function withRunchiseRetry(fn) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (attempt >= RUNCHISE_MAX_RETRIES || !isTransientRunchiseError(error)) {
-        throw error;
-      }
-      await sleep(getRetryDelayMs(error, attempt));
-    }
-  }
-}
 
 function recordError(summary, entry) {
   if (summary.errors.length < MAX_REPORTED_ERRORS) {

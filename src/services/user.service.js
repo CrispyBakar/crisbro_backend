@@ -1,8 +1,15 @@
 const bcrypt = require("bcrypt");
 const prisma = require("../lib/prisma");
 const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
+const {
+  createEmailVerificationToken,
+  deliverEmailVerificationSafely,
+} = require("./emailVerification.service");
+const { revokeUserSessions } = require("./session.service");
 
 const BCRYPT_ROUNDS = 10;
+const STAFF_EMAIL_PATTERN = /^[^\s@]+@crisbar\.id$/i;
+const INVALID_EMAIL_DOMAIN_MESSAGE = "Email harus menggunakan domain @crisbar.id";
 const ALLOWED_CREATE_FIELDS = [
   "email",
   "username",
@@ -40,7 +47,11 @@ async function createUserService(payload) {
   try {
     const existing = await prisma.user.findFirst({
       where: {
-        OR: [{ email: data.email }, { username: data.username }, { phone: data.phone }],
+        OR: [
+          { email: data.email },
+          { username: data.username },
+          { phone: data.phone },
+        ],
       },
     });
 
@@ -52,9 +63,21 @@ async function createUserService(payload) {
       delete data.password;
     }
 
+    const verification = data.email ? createEmailVerificationToken() : null;
+    if (verification) Object.assign(data, verification.fields);
+
     const user = await prisma.user.create({
       data,
     });
+
+    if (verification) {
+      await deliverEmailVerificationSafely({
+        to: user.email,
+        name: user.username,
+        token: verification.token,
+        expiresAt: verification.expiresAt,
+      });
+    }
 
     return user;
   } catch (error) {
@@ -80,10 +103,17 @@ async function updateUserService(user_id, payload) {
       throw new Error("User not found");
     }
 
+    const emailChanged = data.email !== undefined && data.email !== user.email;
+
+    // Email staff dipakai untuk login dan hanya boleh berdomain perusahaan
+    if (emailChanged && !STAFF_EMAIL_PATTERN.test(data.email)) {
+      throw new Error(INVALID_EMAIL_DOMAIN_MESSAGE);
+    }
+
     // Pastikan email/username/phone/referral_code/no_referensi tidak dipakai user lain
     const uniqueChecks = [];
 
-    if (data.email !== undefined && data.email !== user.email) {
+    if (emailChanged) {
       uniqueChecks.push({ email: data.email });
     }
     if (data.username !== undefined && data.username !== user.username) {
@@ -123,15 +153,35 @@ async function updateUserService(user_id, payload) {
       }
     }
 
-    if (data.password !== undefined) {
+    // Email baru wajib diverifikasi ulang; token baru menggantikan token lama
+    // sehingga link untuk email lama tidak lagi berlaku.
+    const verification = emailChanged ? createEmailVerificationToken() : null;
+    if (verification) Object.assign(data, verification.fields);
+
+    const passwordChanged = data.password !== undefined;
+    if (passwordChanged) {
       data.password_hash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
       delete data.password;
     }
 
-    const updated = await prisma.user.update({
-      where: { user_id: user_id },
-      data,
+    // Password yang di-reset admin mencabut semua sesi user tersebut.
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { user_id: user_id },
+        data,
+      });
+      if (passwordChanged) await revokeUserSessions(user_id, tx);
+      return result;
     });
+
+    if (verification) {
+      await deliverEmailVerificationSafely({
+        to: updated.email,
+        name: updated.username,
+        token: verification.token,
+        expiresAt: verification.expiresAt,
+      });
+    }
 
     return updated;
   } catch (error) {
@@ -139,4 +189,20 @@ async function updateUserService(user_id, payload) {
   }
 }
 
-module.exports = { createUserService, updateUserService };
+async function revokeUserSessionsService(user_id) {
+  if (!user_id) throw new Error("user_id is required");
+
+  const user = await prisma.user.findUnique({
+    where: { user_id: user_id },
+    select: { user_id: true },
+  });
+  if (!user) throw new Error("User not found");
+
+  return revokeUserSessions(user_id);
+}
+
+module.exports = {
+  createUserService,
+  updateUserService,
+  revokeUserSessionsService,
+};

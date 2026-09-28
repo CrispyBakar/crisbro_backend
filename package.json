@@ -8,6 +8,8 @@
     "lint": "eslint src api",
     "dev": "nodemon src/index.js",
     "worker:customer-sync": "node src/jobs/customer-sync/worker.js",
+    "worker:product-sync": "node src/jobs/product-sync/worker.js",
+    "queue:reset": "node scripts/reset-queue.js",
     "db:migrate": "bash scripts/db-migrate.sh",
     "db:unlock": "node scripts/db-unlock.mjs"
   },

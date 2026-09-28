@@ -127,6 +127,58 @@ async function sendActivationEmail({
   });
 }
 
+function sendEmailVerificationEmail({ to, name, verificationUrl, expiresAt }) {
+  const expiryText = new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(expiresAt);
+  const displayName = name || "Crisbro Member";
+  const escapedName = escapeHtml(displayName);
+  const escapedEmail = escapeHtml(to);
+  const escapedVerificationUrl = escapeHtml(verificationUrl);
+  const escapedExpiryText = escapeHtml(expiryText);
+
+  return sendMail({
+    to,
+    subject: "Verify your email - Loyalty Crisbro",
+    text: [
+      "Verify your email",
+      "",
+      `Hello ${displayName},`,
+      "",
+      `Please confirm that ${to} is your email address by opening the link below:`,
+      verificationUrl,
+      "",
+      `This link can only be used once and is valid until ${expiryText} WIB.`,
+      "",
+      "If you did not request this, please ignore this email.",
+    ].join("\n"),
+    html: `
+      <h2 style="margin:0 0 16px;font-family:Arial,sans-serif;color:#111827;">Verify your email</h2>
+      <p style="font-family:Arial,sans-serif;color:#374151;">Hello ${escapedName},</p>
+      <p style="font-family:Arial,sans-serif;color:#374151;">
+        Please confirm that <strong>${escapedEmail}</strong> is your email address.
+      </p>
+      <p>
+        <a href="${escapedVerificationUrl}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#e11d48;color:#ffffff;text-decoration:none;font-weight:700;">
+          Verify Email
+        </a>
+      </p>
+      <p style="font-family:Arial,sans-serif;color:#374151;">
+        You can also copy-paste the following link in your browser:
+      </p>
+      <p style="font-family:Arial,sans-serif;color:#374151;word-break:break-all;">${escapedVerificationUrl}</p>
+      <p style="font-family:Arial,sans-serif;color:#6b7280;font-size:13px;">
+        This link can only be used once and is valid until <strong>${escapedExpiryText} WIB</strong>.
+      </p>
+      <p style="font-family:Arial,sans-serif;color:#6b7280;font-size:13px;">
+        If you did not request this, please ignore this email.
+      </p>
+    `,
+  });
+}
+
 function sendReferralValidationEmail({
   to,
   referrer,
@@ -200,6 +252,7 @@ function sendReferralValidationEmail({
 
 module.exports = {
   sendActivationEmail,
+  sendEmailVerificationEmail,
   sendReferralValidationEmail,
   sendMail,
 };
