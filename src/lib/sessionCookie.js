@@ -1,19 +1,22 @@
-const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'crisbar_session';
-const SAME_SITE_VALUES = ['strict', 'lax', 'none'];
+const SESSION_COOKIE_NAME =
+  process.env.SESSION_COOKIE_NAME || "crisbar_session";
+const SAME_SITE_VALUES = ["strict", "lax", "none"];
 
-function parseCookies(header = '') {
-  return String(header).split(';').reduce((cookies, part) => {
-    const separator = part.indexOf('=');
-    if (separator < 1) return cookies;
-    const name = part.slice(0, separator).trim();
-    const value = part.slice(separator + 1).trim();
-    try {
-      cookies[name] = decodeURIComponent(value);
-    } catch {
-      // Cookie dengan encoding rusak bukan kredensial yang valid.
-    }
-    return cookies;
-  }, {});
+function parseCookies(header = "") {
+  return String(header)
+    .split(";")
+    .reduce((cookies, part) => {
+      const separator = part.indexOf("=");
+      if (separator < 1) return cookies;
+      const name = part.slice(0, separator).trim();
+      const value = part.slice(separator + 1).trim();
+      try {
+        cookies[name] = decodeURIComponent(value);
+      } catch {
+        // Cookie dengan encoding rusak bukan kredensial yang valid.
+      }
+      return cookies;
+    }, {});
 }
 
 function getSessionCookie(req) {
@@ -35,22 +38,25 @@ function isHttpsRequest(req) {
 }
 
 function resolveSameSite(req) {
-  const configured = String(process.env.SESSION_COOKIE_SAME_SITE || '').toLowerCase();
+  const configured = String(
+    process.env.SESSION_COOKIE_SAME_SITE || "",
+  ).toLowerCase();
   if (SAME_SITE_VALUES.includes(configured)) return configured;
 
-  return process.env.NODE_ENV === 'production' || isHttpsRequest(req)
-    ? 'none'
-    : 'strict';
+  return process.env.NODE_ENV === "production" || isHttpsRequest(req)
+    ? "none"
+    : "strict";
 }
 
 function cookieOptions(req, expiresAt) {
   const sameSite = resolveSameSite(req);
   // SameSite=None wajib Secure; tanpa itu browser menolak cookie.
   const secure =
-    sameSite === 'none' ||
-    process.env.NODE_ENV === 'production' ||
+    sameSite === "none" ||
+    process.env.NODE_ENV === "production" ||
     isHttpsRequest(req);
 
+  // TEST
   return {
     httpOnly: true,
     secure,
@@ -58,8 +64,9 @@ function cookieOptions(req, expiresAt) {
     // Browser yang memblokir third-party cookie (mode incognito Chrome, Brave,
     // dll.) masih menerima cookie Partitioned (CHIPS). Frontend selalu jadi
     // top-level site yang sama, jadi partisi tidak mengubah perilaku sesi.
-    partitioned: sameSite === 'none' && process.env.SESSION_COOKIE_PARTITIONED !== 'false',
-    path: '/api',
+    partitioned:
+      sameSite === "none" && process.env.SESSION_COOKIE_PARTITIONED !== "false",
+    path: "/api",
     ...(expiresAt ? { expires: expiresAt } : {}),
   };
 }
