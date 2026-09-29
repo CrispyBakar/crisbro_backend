@@ -5,7 +5,7 @@ const { normalizePhone } = require("./phoneNumber");
 // Penyimpan hitungan rate limit di Postgres.
 //
 // MemoryStore bawaan express-rate-limit tidak memadai di sini: backend berjalan
-// sebagai serverless function di Vercel, dan tiap instance punya memorinya
+// sebagai serverless function di Netlify, dan tiap instance punya memorinya
 // sendiri. Penyerang yang requestnya tersebar ke banyak instance akan mendapat
 // jatah sebanyak jumlah instance, dan hitungan hilang setiap cold start.
 // Menyimpannya di database membuat batas berlaku menyeluruh.
@@ -90,7 +90,7 @@ function shouldSkipGlobalLimiter(req) {
   // masing-masing. Jangan ikut menghabiskan kuota API umum: trafik dashboard
   // atau NAT/proxy bersama tidak boleh mengunci pintu login semua pengguna.
   // Express menerima dua bentuk tergantung adapter/deployment: local mount
-  // masih memuat prefix `/api`, sedangkan Vercel function sering sudah
+  // masih memuat prefix `/api`, sedangkan adapter serverless bisa saja
   // menghapusnya sebelum meneruskan request ke app.
   const path = String(req.path || "").replace(/^\/api(?=\/|$)/, "") || "/";
   return (
@@ -233,7 +233,7 @@ const globalLimiter = rateLimit({
   handler: tooManyRequests(
     "Terlalu banyak permintaan. Coba lagi sebentar lagi.",
   ),
-  // Endpoint cron dipanggil penjadwal Vercel dan sudah dijaga CRON_SECRET.
+  // Endpoint cron dipanggil penjadwal eksternal dan sudah dijaga CRON_SECRET.
   skip: shouldSkipGlobalLimiter,
 });
 

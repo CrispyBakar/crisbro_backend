@@ -2,8 +2,8 @@
 //
 // Seluruh data Runchise (tanggal transaksi, promo, redemption) memakai kalender
 // WIB/Asia_Jakarta (UTC+7 tetap, tanpa DST). Runtime aplikasi TIDAK memakai zona
-// itu: Vercel menjalankan function dalam UTC dan tidak ada `TZ` yang diset di
-// vercel.json maupun env, sementara mesin developer di Indonesia berjalan di
+// itu: Netlify Functions (AWS Lambda) berjalan dalam UTC dan tidak ada `TZ` yang
+// diset di netlify.toml maupun env, sementara mesin developer di Indonesia di
 // UTC+7. Setiap helper tanggal yang memakai API waktu lokal (`setHours`,
 // `getFullYear`, `new Date('YYYY-MM-DDTHH:mm')`) karena itu memberi hasil yang
 // BERBEDA antara laptop developer dan production -- kelas bug yang sama dengan

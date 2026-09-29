@@ -3,6 +3,9 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Build Netlify berjalan di Ubuntu, sedangkan Netlify Functions berjalan di
+  // AWS Lambda (Amazon Linux, OpenSSL 3); engine keduanya harus ikut dibuat.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

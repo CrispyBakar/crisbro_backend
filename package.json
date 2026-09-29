@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "postinstall": "prisma generate",
-    "lint": "eslint src api",
+    "lint": "eslint src netlify",
     "dev": "nodemon src/index.js",
     "worker:customer-sync": "node src/jobs/customer-sync/worker.js",
     "worker:product-sync": "node src/jobs/product-sync/worker.js",
@@ -34,6 +34,7 @@
     "p-limit": "^7.3.2",
     "pg": "^8.21.0",
     "prisma": "^6.19.3",
+    "serverless-http": "^3.2.0",
     "swagger-ui-express": "^5.0.1",
     "yamljs": "^0.3.0",
     "zod": "^3.25.76"

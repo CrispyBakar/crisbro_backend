@@ -1,0 +1,30 @@
+[build]
+  # Tidak ada frontend di repo ini; folder publish hanya perlu ada.
+  publish = "public"
+  functions = "netlify/functions"
+  # postinstall sudah menjalankan prisma generate, tetapi dijalankan eksplisit
+  # supaya build gagal jelas bila schema/engine bermasalah.
+  command = "npx prisma generate"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # prisma-erd-generator (diagram prisma/crisbro_erd.svg) butuh Chromium;
+  # diagram hanya dibuat di lokal, tidak saat deploy.
+  DISABLE_ERD = "true"
+  PUPPETEER_SKIP_DOWNLOAD = "true"
+
+[functions]
+  # openapi.yaml dibaca dari disk saat app di-load (src/docs/swagger.js) dan
+  # engine Prisma dimuat dinamis; keduanya tidak terdeteksi oleh bundler.
+  included_files = [
+    "src/docs/openapi.yaml",
+    "node_modules/.prisma/client/**",
+  ]
+
+# Semua request diteruskan ke Express. force = true supaya tidak ada file
+# statis yang membayangi route API.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true

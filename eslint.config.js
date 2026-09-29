@@ -3,10 +3,10 @@ const globals = require('globals');
 
 module.exports = [
   {
-    ignores: ['node_modules/**', 'generated/**', '.vercel/**', 'coverage/**'],
+    ignores: ['node_modules/**', 'generated/**', '.netlify/**', 'coverage/**'],
   },
   {
-    files: ['src/**/*.js', 'api/**/*.js'],
+    files: ['src/**/*.js', 'netlify/**/*.js'],
     ...js.configs.recommended,
     languageOptions: {
       ecmaVersion: 2022,
