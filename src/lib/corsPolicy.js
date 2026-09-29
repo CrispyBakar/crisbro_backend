@@ -44,6 +44,8 @@ function createCorsPolicy({
     frontendUrl,
     "http://localhost:5173",
     "http://localhost:5002",
+    "https://crisbro.netlify.app",
+    "https://crisbrobackend.netlify.app",
     ...String(corsOrigins || "").split(","),
   ];
   const allowedOrigins = new Set(
