@@ -28,6 +28,7 @@ const { globalLimiter } = require("./lib/rateLimit");
 const { createCorsPolicy } = require("./lib/corsPolicy");
 const { setPrivateNoStoreHeaders } = require("./lib/responseCache");
 const { respondWithServerError } = require("./lib/serverError");
+const { createBufferedJsonBodyParser } = require("./lib/bufferedJsonBody");
 
 // Middleware
 const requireDocsAccess = require("./middleware/docsAccess");
@@ -68,7 +69,10 @@ app.use(corsPolicy.guard);
 app.use(cors(corsPolicy.corsOptions));
 
 // Limit Request Body
-app.use(express.json({ limit: "100kb" }));
+const JSON_BODY_LIMIT_BYTES = 100 * 1024;
+app.use(express.json({ limit: JSON_BODY_LIMIT_BYTES }));
+// Netlify Functions: body datang sudah ter-buffer dan dilewati express.json()
+app.use(createBufferedJsonBodyParser({ limitBytes: JSON_BODY_LIMIT_BYTES }));
 
 // CSRF Protection
 app.use(csrfProtection);
