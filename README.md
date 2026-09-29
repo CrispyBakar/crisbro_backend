@@ -12,7 +12,7 @@ lokasi outlet, promo, serta sinkronisasi data dari Runchise (POS).
 - Zod untuk validasi request
 - JWT (cookie httpOnly atau Bearer token)
 - Integrasi: Runchise (POS), Fazpass (OTP), Qontak (WhatsApp), SMTP (email)
-- Deploy ke Vercel
+- Deploy ke Netlify (Netlify Functions)
 
 ## Quick Start
 
@@ -188,7 +188,9 @@ backend/
 │   ├── utils/
 │   └── docs/                 # openapi.yaml, swagger
 ├── tests/
-└── vercel.json
+├── netlify/functions/api.js  # wrapper Netlify Function untuk app Express
+├── public/                   # folder publish Netlify (sengaja kosong)
+└── netlify.toml
 ```
 
 ## Testing
@@ -207,14 +209,27 @@ Catatan: `@prisma/client` memuat `.env` saat di-import, sehingga test bisa
 hijau di lokal tetapi merah di CI (yang tidak punya `.env`). Untuk
 mereproduksi kondisi CI, pindahkan `.env` sementara ke luar folder.
 
-## Deployment (Vercel)
+## Deployment (Netlify)
 
-[vercel.json](vercel.json) mengarahkan semua request ke `src/index.js`.
-`prisma generate` berjalan otomatis lewat `postinstall`. Pastikan semua
-variabel pada bagian **Wajib** dan **Integrasi** sudah diisi di dashboard
-Vercel, serta `NODE_ENV=production`.
+App Express dibungkus sebagai Netlify Function di
+[netlify/functions/api.js](netlify/functions/api.js) memakai `serverless-http`.
+[netlify.toml](netlify.toml) mengarahkan semua request (`/*`) ke function
+tersebut, sehingga path tetap `/api/...`. Hal lain yang diatur di sana:
 
-Worker BullMQ **tidak** berjalan di Vercel (serverless); jalankan di server
+- `publish = "public"`: folder kosong, repo ini tidak punya file statis.
+- Build menjalankan `prisma generate`; `schema.prisma` membuat engine untuk
+  `rhel-openssl-3.0.x` (runtime AWS Lambda) selain engine lokal.
+- `included_files` mengikutkan `src/docs/openapi.yaml` dan engine Prisma,
+  karena keduanya dibaca dinamis dan tidak terdeteksi bundler.
+- `DISABLE_ERD=true` mematikan pembuatan diagram ERD (butuh Chromium) saat build.
+
+Pastikan semua variabel pada bagian **Wajib** dan **Integrasi** sudah diisi di
+dashboard Netlify (Site configuration > Environment variables), serta
+`NODE_ENV=production`. Migration database tidak dijalankan saat build; jalankan
+`npx prisma migrate deploy` (dengan `DIRECT_URL`) sebelum deploy yang mengubah
+schema.
+
+Worker BullMQ **tidak** berjalan di Netlify (serverless); jalankan di server
 yang bisa menjaga proses tetap hidup dan punya akses ke Redis.
 
 ## Catatan Keamanan

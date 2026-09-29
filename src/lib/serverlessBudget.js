@@ -1,4 +1,5 @@
-// Harus sama dengan `functions.api/index.js.maxDuration` di vercel.json.
+// Tidak boleh melebihi batas waktu eksekusi Netlify Function pada plan yang
+// dipakai; sesuaikan konstanta ini bila batas di Netlify lebih pendek.
 // Satu sumber konstanta di aplikasi membuat worker tidak bebas menerima budget
 // environment yang lebih panjang daripada umur function deployment.
 const SERVERLESS_MAX_DURATION_MS = 30_000;
