@@ -4,7 +4,7 @@
   functions = "netlify/functions"
   # postinstall sudah menjalankan prisma generate, tetapi dijalankan eksplisit
   # supaya build gagal jelas bila schema/engine bermasalah.
-  command = "npx prisma generate"
+  command = "npx prisma generate --generator client"
 
 [build.environment]
   NODE_VERSION = "22"

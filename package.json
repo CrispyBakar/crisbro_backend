@@ -4,9 +4,10 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate --generator client",
     "lint": "eslint src netlify",
     "dev": "nodemon src/index.js",
+    "db:erd": "prisma generate --generator erd",
     "worker:customer-sync": "node src/jobs/customer-sync/worker.js",
     "worker:product-sync": "node src/jobs/product-sync/worker.js",
     "queue:reset": "node scripts/reset-queue.js",
