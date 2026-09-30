@@ -38,7 +38,14 @@ async function listLoyaltyProductsController(req, res) {
 
 async function listAllProductsController(req, res) {
   try {
-    const { search = "", skip = 0, take = 10 } = req.query;
+    const {
+      search = "",
+      skip = 0,
+      take = 10,
+      status,
+      sort_by,
+      order_by,
+    } = req.query;
 
     const parsedTake = Math.min(Number.parseInt(take, 10) || 10, 100);
     const parsedSkip = Math.max(Number.parseInt(skip, 10) || 0, 0);
@@ -47,6 +54,9 @@ async function listAllProductsController(req, res) {
       search,
       skip: parsedSkip,
       take: parsedTake,
+      status,
+      sort_by,
+      order_by,
     });
 
     return successRequest({
