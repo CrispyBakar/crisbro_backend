@@ -15,7 +15,14 @@ const {
   deliverEmailVerificationSafely,
 } = require("./emailVerification.service");
 
-const ALLOWED_SORT_FIELDS = ["created_at", "name", "phone_number", "status"];
+const ALLOWED_SORT_FIELDS = [
+  "created_at",
+  "name",
+  "phone_number",
+  "status",
+  "available_point",
+  "total_point",
+];
 const POINT_HISTORY_SORT_FIELDS = ["formatted_created_at", "issued_at_time"];
 const ALLOWED_UPDATE_FIELDS = [
   "name",
@@ -30,6 +37,8 @@ const ALLOWED_UPDATE_FIELDS = [
   "status",
   "last_updated_by_id",
   "owner_location_id",
+  "available_point",
+  "total_point",
   "dob",
 ];
 const RUNCHISE_UPDATE_FIELDS = [
@@ -72,12 +81,14 @@ async function listAllCustomers(query = {}) {
     search = "",
     sort_by = "created_at",
     sort_order = "desc",
+    start_date,
+    end_date,
   } = query;
 
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  const where = search
+  let where = search
     ? {
         OR: [
           { name: { contains: search, mode: "insensitive" } },
@@ -85,6 +96,12 @@ async function listAllCustomers(query = {}) {
         ],
       }
     : {};
+
+  if (start_date || end_date) {
+    where.created_at = {};
+    if (start_date) where.created_at.gt = new Date(start_date);
+    if (end_date) where.created_at.lt = new Date(end_date);
+  }
 
   try {
     const [customers, total] = await prisma.$transaction([

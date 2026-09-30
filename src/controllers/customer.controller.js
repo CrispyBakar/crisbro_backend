@@ -25,9 +25,18 @@ const listCustomersQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(10),
   search: z.string().default(""),
   sort_by: z
-    .enum(["created_at", "name", "phone_number", "status"])
+    .enum([
+      "created_at",
+      "name",
+      "phone_number",
+      "status",
+      "available_point",
+      "total_point",
+    ])
     .default("created_at"),
   sort_order: z.enum(["asc", "desc"]).default("desc"),
+  start_date: z.string().optional(),
+  end_date: z.string().optional(),
 });
 const updateMyCustomerSchema = updateCustomerSchema.omit({
   status: true,

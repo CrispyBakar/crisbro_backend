@@ -434,7 +434,15 @@ paths:
           name: sort_by
           schema:
             type: string
-            enum: [created_at, name, phone_number, status]
+            enum:
+              [
+                created_at,
+                name,
+                phone_number,
+                status,
+                available_point,
+                total_point,
+              ]
             default: created_at
         - in: query
           name: sort_order
@@ -442,6 +450,20 @@ paths:
             type: string
             enum: [asc, desc]
             default: desc
+        - in: query
+          name: start_date
+          description: Filter customer dengan created_at setelah tanggal ini (eksklusif)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-01-01T00:00:00Z"
+        - in: query
+          name: end_date
+          description: Filter customer dengan created_at sebelum tanggal ini (eksklusif)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-12-31T23:59:59Z"
       responses:
         "200":
           description: Daftar customer
@@ -906,6 +928,33 @@ paths:
           schema:
             type: integer
             default: 0
+        - in: query
+          name: status
+          description: Filter berdasarkan status produk (exact match)
+          schema:
+            type: string
+        - in: query
+          name: sort_by
+          description: Kolom untuk sorting. Jika tidak diisi, diurutkan berdasarkan name asc.
+          schema:
+            type: string
+            enum:
+              [
+                name,
+                sku,
+                sell_price,
+                internal_price,
+                status,
+                product_category,
+                created_at,
+                updated_at,
+              ]
+        - in: query
+          name: order_by
+          description: Arah sorting (dipakai bersama sort_by)
+          schema:
+            type: string
+            enum: [asc, desc]
       responses:
         "200":
           description: Daftar produk lokal

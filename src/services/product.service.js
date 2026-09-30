@@ -72,19 +72,30 @@ async function generateAllProducts() {
   }
 }
 
-async function listAllProducts({ search, take, skip }) {
+async function listAllProducts({
+  search,
+  take,
+  skip,
+  status,
+  sort_by,
+  order_by,
+}) {
   try {
-    const where = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { sku: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : undefined;
+    const where = {};
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { sku: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    if (status) where.status = String(status);
+
+    const order = sort_by ? { [sort_by]: order_by } : { name: "asc" };
 
     const [products, total] = await prisma.$transaction([
-      prisma.products.findMany({ where, take, skip, orderBy: { name: "asc" } }),
+      prisma.products.findMany({ where, take, skip, orderBy: order }),
       prisma.products.count({ where }),
     ]);
 
