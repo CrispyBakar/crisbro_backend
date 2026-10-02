@@ -26,9 +26,13 @@ const numericValue = z.union([
   z.number().finite(),
 ]);
 
-const promoDateInput = z.string()
+const promoDateInput = z
+  .string()
   .regex(/^\d{2}\/\d{2}\/\d{4}$/, "Format tanggal harus DD/MM/YYYY")
-  .refine((value) => remoteDate.safeParse(value).success, "Tanggal kalender tidak valid");
+  .refine(
+    (value) => remoteDate.safeParse(value).success,
+    "Tanggal kalender tidak valid",
+  );
 
 const anyObject = z.object({}).passthrough();
 

@@ -12,13 +12,22 @@ const {
 const {
   updatePromoSchema,
 } = require("../validation/runchise/runchise-validation");
-const { successRequest, badRequest } = require("../utils/responseReuest");
+const {
+  successRequest,
+  badRequest,
+  respondWithServerError,
+} = require("../utils/responseReuest");
 
 const promoIdSchema = z.string().uuid("ID promo harus berupa UUID yang valid");
 
 function respondPromoError(res, error) {
   if (error instanceof z.ZodError) {
     return badRequest({ res, code: 422, error: error.flatten() });
+  }
+  // Error tanpa statusCode bukan promoError (mis. error Prisma); jangan
+  // teruskan pesan mentahnya ke client.
+  if (!error.statusCode) {
+    return respondWithServerError(res, error, "Promo request failed");
   }
   return badRequest({
     res,

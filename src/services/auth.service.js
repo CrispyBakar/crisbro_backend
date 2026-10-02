@@ -41,15 +41,16 @@ function getFazpassGatewayKey() {
 }
 
 function buildLocalCustomerData(remoteCustomer, userId, fallbackPhone) {
+  const phoneNumber =
+    remoteCustomer.phone_number ?? remoteCustomer.phoneNumber ?? fallbackPhone;
+
   return {
     user_id: userId,
     runchise_id: remoteCustomer.id,
     runchise_location_id: remoteCustomer.owner_location_id,
     name: remoteCustomer.name,
-    phone_number:
-      remoteCustomer.phone_number ??
-      remoteCustomer.phoneNumber ??
-      fallbackPhone,
+    phone_number: phoneNumber,
+    normalized_phone_number: normalizePhone(phoneNumber),
     total_point: remoteCustomer.total_point ?? 0,
     available_point: remoteCustomer.available_point ?? 0,
     created_at: new Date(remoteCustomer.created_at ?? Date.now()),
@@ -151,18 +152,47 @@ async function registerUser(data) {
       },
     });
 
-    const customerLocal = await tx.customer.findFirst({
-      where: { phone_number: data.phone },
-    });
+    // Customer lokal bisa sudah ada dari sync Runchise (user_id masih null)
+    // dengan format nomor berbeda, jadi dicari lewat runchise_id lalu semua
+    // varian nomor. Customer yang ditemukan wajib dihubungkan ke user baru.
+    const normalizedPhone = normalizePhone(data.phone);
+    const customerLocal =
+      (await tx.customer.findUnique({
+        where: { runchise_id: remoteCustomer.id },
+        select: { customer_id: true, user_id: true },
+      })) ??
+      (await tx.customer.findFirst({
+        where: {
+          OR: [
+            { normalized_phone_number: normalizedPhone },
+            { phone_number: { in: phoneVariants(normalizedPhone) } },
+          ],
+        },
+        select: { customer_id: true, user_id: true },
+        orderBy: { created_at: "asc" },
+      }));
 
-    if (!customerLocal) {
-      await tx.customer.create({
-        data: buildLocalCustomerData(
-          remoteCustomer,
-          createdUser.user_id,
-          data.phone,
-        ),
+    if (customerLocal?.user_id) {
+      throw new AuthServiceError(
+        400,
+        "Nomor telepon sudah terhubung dengan akun lain",
+      );
+    }
+
+    const customerData = buildLocalCustomerData(
+      remoteCustomer,
+      createdUser.user_id,
+      data.phone,
+    );
+
+    if (customerLocal) {
+      const { created_at, ...linkData } = customerData;
+      await tx.customer.update({
+        where: { customer_id: customerLocal.customer_id },
+        data: linkData,
       });
+    } else {
+      await tx.customer.create({ data: customerData });
     }
 
     let createdReferralRecord = [];
@@ -250,12 +280,12 @@ async function registerUser(data) {
     },
   });
 
-  await deliverEmailVerificationSafely({
-    to: userWithReference.email,
-    name: data.name,
-    token: verification.token,
-    expiresAt: verification.expiresAt,
-  });
+  // await deliverEmailVerificationSafely({
+  //   to: userWithReference.email,
+  //   name: data.name,
+  //   token: verification.token,
+  //   expiresAt: verification.expiresAt,
+  // });
 
   const defaultText = `AKTIVASI CRISBRO\nHarap kirim pesan ini tanpa merubah apapun.\nNo.ref:${userWithReference.no_referensi}`;
 
