@@ -1574,6 +1574,8 @@ paths:
             type: string
             enum: [pending, completed]
           description: Kosongkan untuk semua status
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/LimitQuery"
       responses:
         "200":
           description: Daftar pemakaian kode referral
@@ -1592,13 +1594,13 @@ paths:
                             items:
                               $ref: "#/components/schemas/ReferralUsage"
                           meta:
-                            type: object
-                            properties:
-                              total:
-                                type: integer
-                              status:
-                                type: string
-                                example: all
+                            allOf:
+                              - $ref: "#/components/schemas/PageMeta"
+                              - type: object
+                                properties:
+                                  status:
+                                    type: string
+                                    example: all
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1617,6 +1619,8 @@ paths:
       security:
         - bearerAuth: []
         - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
       requestBody:
         required: false
         content:
@@ -1656,6 +1660,8 @@ paths:
       security:
         - bearerAuth: []
         - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
       requestBody:
         required: false
         content:
@@ -1699,6 +1705,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: "#/components/parameters/UserIdPath"
+        - $ref: "#/components/parameters/CsrfToken"
       responses:
         "200":
           description: Referral divalidasi
@@ -1721,8 +1728,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            Referral sudah diproses, data customer peserta belum lengkap, atau
+            user yang direferensikan belum verifikasi nomor telepon
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "502":
+          description: >-
+            Gagal menambah poin di Runchise. Jika poin yang sudah masuk
+            berhasil dikembalikan, referral kembali pending dan bisa diulang;
+            jika tidak, referral tetap completed dan perlu dicek manual.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/locations:
     get:
@@ -2975,6 +2999,30 @@ components:
           description: Hanya tersedia pada detail, tidak pada item list
           items:
             $ref: "#/components/schemas/PromoCode"
+        products:
+          type: array
+          description: Produk dari promo.product_ids; hanya tersedia pada detail, tidak pada item list
+          items:
+            type: object
+            properties:
+              product_id:
+                type: string
+                format: uuid
+              runchise_id:
+                type: integer
+                nullable: true
+              name:
+                type: string
+                nullable: true
+              sku:
+                type: string
+                nullable: true
+              sell_price:
+                type: string
+                nullable: true
+              image_url:
+                type: string
+                nullable: true
 
     Promo:
       type: object
@@ -3012,6 +3060,11 @@ components:
           nullable: true
         location_ids:
           type: array
+          items:
+            type: string
+        product_ids:
+          type: array
+          description: UUID produk lokal dari product_ids, maximum_qty_applied_to_products, get_product_ids, dan reward_products
           items:
             type: string
         created_at:

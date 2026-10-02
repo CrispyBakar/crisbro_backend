@@ -16,7 +16,15 @@ const {
 } = require("../constants/referralCodeValue");
 
 const userIdSchema = z.string().uuid("User ID must be a valid UUID");
-const referralStatusSchema = z.enum(["pending", "completed"]).optional();
+const listReferralUsagesQuerySchema = z.object({
+  status: z
+    .enum(["pending", "completed"], {
+      errorMap: () => ({ message: "Status must be pending or completed" }),
+    })
+    .optional(),
+  page: z.coerce.number().int().min(1).max(2147483647).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+});
 
 async function generateReferralCodeController(req, res) {
   const { user_id } = req.user ?? {};
@@ -137,19 +145,17 @@ async function validateReferralCodeController(req, res) {
 }
 
 async function listReferralCodeUsagesController(req, res) {
-  const validation = referralStatusSchema.safeParse(req.query.status);
+  const validation = listReferralUsagesQuerySchema.safeParse(req.query);
 
   if (!validation.success) {
     return badRequest({
       res,
       code: 422,
-      error: "Status must be pending or completed",
+      error: validation.error.flatten().fieldErrors,
     });
   }
 
-  const response = await listReferralCodeUsagesService({
-    status: validation.data,
-  });
+  const response = await listReferralCodeUsagesService(validation.data);
 
   return successRequest({
     res,

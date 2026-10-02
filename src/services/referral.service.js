@@ -1,6 +1,10 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../lib/prisma");
 const { generateRandomUniqueCode } = require("../utils/generateReferralCode");
-const { findCustomerByPhone } = require("./runchise.service");
+const {
+  findCustomerByPhone,
+  adjustCustomerPoint,
+} = require("./runchise.service");
 const { normalizePhone } = require("../lib/phoneNumber");
 
 function optionalInteger(value) {
@@ -55,6 +59,44 @@ function buildCustomerUpdateFromRunchise(
     created_at: new Date(remoteCustomer.created_at ?? Date.now()),
     updated_at: new Date(remoteCustomer.updated_at),
   };
+}
+
+async function revertReferralClaim(referralIds) {
+  await prisma.referral.updateMany({
+    where: { referral_id: { in: referralIds }, status: "completed" },
+    data: { status: "pending" },
+  });
+}
+
+// Menambah poin tiap customer di Runchise secara berurutan. Jika salah satu
+// gagal, poin yang sudah ditambahkan dikurangi kembali (kompensasi).
+async function awardRunchisePoints(remoteCustomers, awardedPoints) {
+  const applied = [];
+
+  try {
+    for (const [index, customer] of remoteCustomers.entries()) {
+      const points = awardedPoints[index];
+      if (!(points > 0)) continue;
+
+      await adjustCustomerPoint(customer.id, points, "add");
+      applied.push({ customerId: customer.id, points });
+    }
+
+    return { ok: true };
+  } catch (error) {
+    try {
+      for (const { customerId, points } of applied) {
+        await adjustCustomerPoint(customerId, points, "subtract");
+      }
+      return { ok: false, compensated: true, error };
+    } catch (compensationError) {
+      return {
+        ok: false,
+        compensated: false,
+        error: new AggregateError([error, compensationError]),
+      };
+    }
+  }
 }
 
 async function generateReferralCodeService({ user_id, payload }) {
@@ -283,6 +325,9 @@ async function validateReferralCodeService({ user_id }) {
     pendingReferral.point_awarded,
   ];
 
+  // Klaim referral lebih dulu (pending -> completed) agar request paralel tidak
+  // ikut menambah poin di Runchise. Penambahan poin tidak bisa di-rollback oleh
+  // transaksi database, jadi dijalankan setelah klaim berhasil.
   const completedCount = await prisma
     .$transaction(async (tx) => {
       const referralUpdate = await tx.referral.updateMany({
@@ -299,19 +344,6 @@ async function validateReferralCodeService({ user_id }) {
         throw conflict;
       }
 
-      await Promise.all(
-        participants.map((user, index) =>
-          tx.customer.update({
-            where: { customer_id: user.customer.customer_id },
-            data: buildCustomerUpdateFromRunchise(
-              remoteCustomers[index],
-              user.customer,
-              awardedPoints[index],
-            ),
-          }),
-        ),
-      );
-
       return referralUpdate.count;
     })
     .catch((error) => {
@@ -322,6 +354,47 @@ async function validateReferralCodeService({ user_id }) {
   if (completedCount === 0) {
     return { code: 409, message: "Referral was already processed" };
   }
+
+  const pointAdjustment = await awardRunchisePoints(
+    remoteCustomers,
+    awardedPoints,
+  );
+
+  if (!pointAdjustment.ok) {
+    if (pointAdjustment.compensated) {
+      await revertReferralClaim(referralIds);
+      return {
+        code: 502,
+        message: "Failed to add referral points in Runchise",
+      };
+    }
+
+    // Poin yang sudah masuk gagal dikembalikan. Referral dibiarkan completed
+    // agar retry tidak menambah poin dua kali; perlu dicek manual.
+    console.error(
+      `Referral ${pendingReferral.referral_id} perlu dicek manual: ` +
+        "penambahan poin Runchise sebagian berhasil dan gagal dikembalikan",
+      pointAdjustment.error,
+    );
+    return {
+      code: 502,
+      message:
+        "Referral points were partially added in Runchise and require manual review",
+    };
+  }
+
+  await prisma.$transaction(
+    participants.map((user, index) =>
+      prisma.customer.update({
+        where: { customer_id: user.customer.customer_id },
+        data: buildCustomerUpdateFromRunchise(
+          remoteCustomers[index],
+          user.customer,
+          awardedPoints[index],
+        ),
+      }),
+    ),
+  );
 
   return {
     code: 200,
@@ -391,10 +464,42 @@ async function getReferralCodesByReferredIdService({ referred_id }) {
   };
 }
 
-async function listReferralCodeUsagesService({ status } = {}) {
+async function listReferralCodeUsagesService({
+  status,
+  page = 1,
+  limit = 10,
+} = {}) {
+  const skip = (page - 1) * limit;
+
+  // Pada data yang benar, pemilik program selalu sama dengan referrer. Filter
+  // ini mencegah row reciprocal dari implementasi lama tampil sebagai pemakai
+  // kode referral kedua. Filter harus di database agar total dan isi halaman
+  // akurat; Prisma tidak bisa membandingkan kolom antar relasi, jadi id
+  // halaman diambil lewat raw query lalu detailnya dimuat via findMany.
+  const statusFilter = status
+    ? Prisma.sql`AND r.status = ${status}::"StatusReferral"`
+    : Prisma.empty;
+
+  const [pageRows, [{ total }]] = await prisma.$transaction([
+    prisma.$queryRaw`
+      SELECT r.referral_id
+      FROM "Referral" r
+      JOIN "ReferralProgram" p ON p.referral_id = r.referral_program_id
+      WHERE p.owner_referral = r.referrer_id ${statusFilter}
+      ORDER BY r.created_at DESC, r.referral_id ASC
+      LIMIT ${limit} OFFSET ${skip}
+    `,
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS total
+      FROM "Referral" r
+      JOIN "ReferralProgram" p ON p.referral_id = r.referral_program_id
+      WHERE p.owner_referral = r.referrer_id ${statusFilter}
+    `,
+  ]);
+
   const referrals = await prisma.referral.findMany({
-    where: status ? { status } : undefined,
-    orderBy: { created_at: "desc" },
+    where: { referral_id: { in: pageRows.map((row) => row.referral_id) } },
+    orderBy: [{ created_at: "desc" }, { referral_id: "asc" }],
     select: {
       referral_id: true,
       point_awarded: true,
@@ -428,44 +533,39 @@ async function listReferralCodeUsagesService({ status } = {}) {
     },
   });
 
-  // Pada data yang benar, pemilik program selalu sama dengan referrer. Filter
-  // ini mencegah row reciprocal dari implementasi lama tampil sebagai pemakai
-  // kode referral kedua.
-  const usages = referrals
-    .filter(
-      (referral) =>
-        referral.program.owner_referral === referral.referrer.user_id,
-    )
-    .map((referral) => ({
-      referral_id: referral.referral_id,
-      referral_code: referral.referrer.referral_code,
-      status: referral.status,
-      referrer: {
-        user_id: referral.referrer.user_id,
-        username: referral.referrer.username,
-        point_reward: referral.program.point_reward,
-      },
-      referred: {
-        user_id: referral.referred.user_id,
-        username: referral.referred.username,
-        phone: referral.referred.phone,
-        phone_verified: referral.referred.phone_verified,
-        account_status: referral.referred.status,
-        point_given: referral.point_awarded,
-      },
-      expires_at: referral.program.expires_at,
-      created_at: referral.created_at,
-      can_validate:
-        referral.status === "pending" &&
-        referral.referred.phone_verified &&
-        referral.referred.status === "active",
-    }));
+  const usages = referrals.map((referral) => ({
+    referral_id: referral.referral_id,
+    referral_code: referral.referrer.referral_code,
+    status: referral.status,
+    referrer: {
+      user_id: referral.referrer.user_id,
+      username: referral.referrer.username,
+      point_reward: referral.program.point_reward,
+    },
+    referred: {
+      user_id: referral.referred.user_id,
+      username: referral.referred.username,
+      phone: referral.referred.phone,
+      phone_verified: referral.referred.phone_verified,
+      account_status: referral.referred.status,
+      point_given: referral.point_awarded,
+    },
+    expires_at: referral.program.expires_at,
+    created_at: referral.created_at,
+    can_validate:
+      referral.status === "pending" &&
+      referral.referred.phone_verified &&
+      referral.referred.status === "active",
+  }));
 
   return {
     code: 200,
     data: usages,
     meta: {
-      total: usages.length,
+      page,
+      limit,
+      total,
+      total_pages: Math.ceil(total / limit),
       status: status ?? "all",
     },
   };

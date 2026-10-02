@@ -115,7 +115,7 @@ async function createCustomer(payload) {
     return result.data?.customer ?? null;
   } catch (error) {
     if (axios.isAxiosError(error)) {
-      const message = JSON.stringify(error.response.data.errors);
+      const message = JSON.stringify(error.response.data.message);
       throw new Error(message);
     }
     throw error;
@@ -839,8 +839,46 @@ async function getAllProducts() {
   }
 }
 
+async function adjustCustomerPoint(
+  runchise_customer_id,
+  point_adjustment,
+  type_adjust,
+) {
+  try {
+    const point =
+      type_adjust === "add"
+        ? Number(point_adjustment)
+        : -Number(point_adjustment);
+
+    const payload = {
+      point: point,
+      notes: `Adjustment point ${type_adjust} by system`,
+    };
+
+    const result = await runchiseClient.post(
+      `/customer_point/${runchise_customer_id}/adjust_point`,
+      payload,
+    );
+
+    return true;
+  } catch (error) {
+    console.log(error.response?.data);
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.errors
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      throw Object.assign(new Error(message, { cause: error }), {
+        code: "RUNCHISE_REQUEST_FAILED",
+        statusCode: 502,
+      });
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   findCustomerByPhone,
+  adjustCustomerPoint,
   createCustomer,
   updateCustomer,
   activateCustomer,

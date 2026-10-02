@@ -6,6 +6,8 @@ const path = require('node:path');
 const { createRequire } = require('node:module');
 const ROOT = path.resolve(__dirname, '..');
 const ID = '550e8400-e29b-41d4-a716-446655440000';
+const PRODUCT_ID = '550e8400-e29b-41d4-a716-446655440001';
+const OTHER_PRODUCT_ID = '550e8400-e29b-41d4-a716-446655440002';
 function load(file, deps) {
   const filename = path.join(ROOT, file);
   const realRequire = createRequire(filename);
@@ -17,10 +19,11 @@ function fixture() {
   return { id: 42, name: 'Promo', goal: 'increase_average_sale', status: 'active', start_date: '04/09/2026', end_date: null, owner_location_id: 10, locations: [{ id: 10 }], promo_rule: { id: 43, order_types: [], maximum_qty_applied_to_products: [], use_promotion_code: true, promotion_code_maximum_usage: '10' }, promo_reward: { id: 44, get_products: null, discount_in_house_cost: 100 } };
 }
 function harness() {
-  const h = { remote: fixture(), codes: [{ id: 45, code: 'ABC', number_of_usage: '2', maximum_usage: '10', usage_type: 'multiple', last_usage: null }], state: { promo: null, rule: null, reward: null, codes: [] }, creates: 0, generations: [], transactions: 0, batches: 0, locationQueries: 0, missingLocation: false, failCodes: false, failWrite: false };
+  const h = { remote: fixture(), codes: [{ id: 45, code: 'ABC', number_of_usage: '2', maximum_usage: '10', usage_type: 'multiple', last_usage: null }], state: { promo: null, rule: null, reward: null, codes: [] }, creates: 0, generations: [], transactions: 0, batches: 0, locationQueries: 0, missingLocation: false, failCodes: false, failWrite: false, products: [{ runchise_id: 182229, product_id: PRODUCT_ID, name: 'Ayam Crisbar' }, { runchise_id: 182230, product_id: OTHER_PRODUCT_ID, name: 'Nasi' }] };
   const prisma = {
     promo: { findUnique: async () => h.state.promo && { ...h.state.promo, promoRule: h.state.rule, promoReward: h.state.reward, PromoCode: h.state.codes }, findMany: () => Promise.resolve(h.state.promo ? [{ ...h.state.promo, promoRule: h.state.rule, promoReward: h.state.reward }] : []), count: () => Promise.resolve(h.state.promo ? 1 : 0) },
     location: { findMany: async () => { h.locationQueries++; return h.missingLocation ? [] : [{ runchise_id: 10, location_id: ID }]; } },
+    products: { findMany: async ({ where }) => where.runchise_id ? h.products.filter(p => where.runchise_id.in.includes(p.runchise_id)) : h.products.filter(p => where.product_id.in.includes(p.product_id)) },
     $transaction: async fn => {
       if (Array.isArray(fn)) return Promise.all(fn);
       h.transactions++;
@@ -226,4 +229,26 @@ test('generation failure does not sync; sync recovery never generates again', as
   await h.service.syncPromoService(42);
   assert.equal(h.generations.length, generations);
   assert.ok(h.state.codes.some(code => code.code === 'GENERATED'));
+});
+
+test('product_ids map request products to local IDs on create/update and are kept by sync', async () => {
+  const h = harness();
+  const created = await h.service.createPromoService(payload);
+  assert.deepEqual([...created.promo.product_ids], [PRODUCT_ID]);
+  assert.deepEqual(created.products.map(p => p.product_id), [PRODUCT_ID]);
+  const detail = await h.service.showPromoService(ID);
+  assert.deepEqual([...detail.promo.product_ids], [PRODUCT_ID]);
+  assert.equal(detail.products[0].name, 'Ayam Crisbar');
+
+  await h.service.updatePromoService(ID, { name: 'Changed' });
+  await h.service.syncPromoService(42);
+  assert.deepEqual([...h.state.promo.product_ids], [PRODUCT_ID]);
+
+  await h.service.updatePromoService(ID, { promo_rule_attributes: { product_ids: [182230] }, promo_reward_attributes: { get_product_ids: [], reward_products: [] } });
+  assert.deepEqual([...h.state.promo.product_ids], [OTHER_PRODUCT_ID]);
+
+  const creates = h.creates;
+  await assert.rejects(h.service.updatePromoService(ID, { promo_rule_attributes: { product_ids: [999] } }), { code: 'PRODUCT_NOT_SYNCED', statusCode: 422 });
+  await assert.rejects(h.service.createPromoService({ ...payload, promo_rule_attributes: { ...payload.promo_rule_attributes, product_ids: [999] } }), { code: 'PRODUCT_NOT_SYNCED' });
+  assert.equal(h.creates, creates);
 });
