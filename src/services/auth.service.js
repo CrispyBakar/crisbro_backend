@@ -58,7 +58,7 @@ function buildLocalCustomerData(remoteCustomer, userId, fallbackPhone) {
   };
 }
 
-async function getReferralRegistrationData(referralCode) {
+async function getReferralRegistrationData(referralCode, runchiseCustomer) {
   if (!referralCode) return null;
 
   const referrer = await prisma.user.findUnique({
@@ -91,6 +91,11 @@ async function getReferralRegistrationData(referralCode) {
     throw new AuthServiceError(400, "Referral code tersebut sudah kadaluwarsa");
   }
 
+  // Kode divalidasi lebih dulu agar kode salah/kadaluwarsa tetap ditolak.
+  // Customer yang sudah ada di Runchise tidak perlu referral dan tidak ada
+  // reward untuk referrer. Reward hanya diberikan untuk customer baru.
+  if (runchiseCustomer) return null;
+
   return {
     referrerId: referrer.user_id,
     programId: referrer.referral_program.referral_id,
@@ -115,8 +120,11 @@ async function registerUser(data) {
     throw new AuthServiceError(400, "Phone / email / username sudah terdaftar");
   }
 
-  const referralData = await getReferralRegistrationData(data.referral_code);
   let remoteCustomer = await findCustomerByPhone({ phone: data.phone });
+  const referralData = await getReferralRegistrationData(
+    data.referral_code,
+    remoteCustomer,
+  );
 
   // Initialize point for new member
   let pointNewMember = 0;

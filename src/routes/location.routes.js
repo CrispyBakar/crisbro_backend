@@ -11,7 +11,7 @@ const {
 router.post("/generate", auth, requireRole("admin"), generateLocations);
 
 // GET /api/locations
-router.get("/", auth, listLocations);
+router.get("/", listLocations);
 
 // DELETE /api/locations/:location_id
 router.delete(

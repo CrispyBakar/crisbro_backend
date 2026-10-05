@@ -12,7 +12,7 @@ const { z } = require("zod");
 const {
   DEFAULT_POINT_REWARD,
   DEFAULT_POINT_GIVEN,
-  DEFAULT_EXPIRES_TIME,
+  getDefaultExpiresTime,
 } = require("../constants/referralCodeValue");
 
 const userIdSchema = z.string().uuid("User ID must be a valid UUID");
@@ -36,7 +36,7 @@ async function generateReferralCodeController(req, res) {
       owner_referral: user_id,
       point_reward: DEFAULT_POINT_REWARD,
       point_given: DEFAULT_POINT_GIVEN,
-      expires_at: DEFAULT_EXPIRES_TIME,
+      expires_at: getDefaultExpiresTime(),
     };
   } else {
     payload = {
@@ -82,7 +82,7 @@ async function renewReferralCodeController(req, res) {
     owner_referral: user_id,
     expires_at: body.expires_at
       ? new Date(body.expires_at)
-      : DEFAULT_EXPIRES_TIME,
+      : getDefaultExpiresTime(),
     point_reward: body.point_reward ?? DEFAULT_POINT_REWARD,
     point_given: body.point_given ?? DEFAULT_POINT_GIVEN,
   };
