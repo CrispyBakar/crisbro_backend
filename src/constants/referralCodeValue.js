@@ -1,11 +1,17 @@
-const now = new Date();
-
-const DEFAULT_POINT_REWARD = 4;
+const DEFAULT_POINT_REWARD = 3;
 const DEFAULT_POINT_GIVEN = 3;
-const DEFAULT_EXPIRES_TIME = new Date(now.setMonth(now.getMonth() + 6));
+const DEFAULT_EXPIRES_MONTHS = 6;
+
+// Dihitung setiap dipanggil agar masa berlaku selalu 6 bulan sejak kode
+// dibuat/diperpanjang, bukan sejak server dinyalakan.
+function getDefaultExpiresTime(from = new Date()) {
+  const expiresAt = new Date(from);
+  expiresAt.setMonth(expiresAt.getMonth() + DEFAULT_EXPIRES_MONTHS);
+  return expiresAt;
+}
 
 module.exports = {
-  DEFAULT_EXPIRES_TIME,
+  getDefaultExpiresTime,
   DEFAULT_POINT_REWARD,
   DEFAULT_POINT_GIVEN,
 };
