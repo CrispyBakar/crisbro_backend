@@ -985,9 +985,8 @@ paths:
     get:
       tags: [Products]
       summary: List loyalty products
-      security:
-        - bearerAuth: []
-        - cookieAuth: []
+      description: Publik, tidak butuh login.
+      security: []
       parameters:
         - in: query
           name: query
