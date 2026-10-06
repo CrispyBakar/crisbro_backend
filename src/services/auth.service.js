@@ -162,6 +162,7 @@ async function registerUser(data) {
         phone: data.phone,
         role: "customer",
         password_hash: passwordHash,
+        status: "active", // default status for new user
         ...verification.fields,
       },
     });
@@ -197,7 +198,6 @@ async function registerUser(data) {
       remoteCustomer,
       createdUser.user_id,
       data.phone,
-      "active", // status untuk customer baru selalu aktif
     );
 
     if (customerLocal) {
