@@ -16,7 +16,8 @@ router.get(
   listAllProductsController,
 );
 
-router.get("/loyalty", auth, listLoyaltyProductsController);
+// Publik: tamu boleh melihat menu redeem; penukaran poin tetap butuh login.
+router.get("/loyalty", listLoyaltyProductsController);
 
 router.post(
   "/sync-products",

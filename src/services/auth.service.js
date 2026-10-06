@@ -40,7 +40,12 @@ function getFazpassGatewayKey() {
   return process.env.FAZPASS_GATEWEY_KEY;
 }
 
-function buildLocalCustomerData(remoteCustomer, userId, fallbackPhone) {
+function buildLocalCustomerData(
+  remoteCustomer,
+  userId,
+  fallbackPhone,
+  status = "active",
+) {
   const phoneNumber =
     remoteCustomer.phone_number ?? remoteCustomer.phoneNumber ?? fallbackPhone;
 
@@ -55,6 +60,7 @@ function buildLocalCustomerData(remoteCustomer, userId, fallbackPhone) {
     available_point: remoteCustomer.available_point ?? 0,
     created_at: new Date(remoteCustomer.created_at ?? Date.now()),
     updated_at: new Date(remoteCustomer.updated_at),
+    status: status,
   };
 }
 
@@ -135,7 +141,7 @@ async function registerUser(data) {
       phone_number: data.phone,
       email: data.email,
       owner_location_id: data.location_id,
-      status: "active",
+      status: "active", // default status for new customer
     });
     pointNewMember = 1;
   }
@@ -191,6 +197,7 @@ async function registerUser(data) {
       remoteCustomer,
       createdUser.user_id,
       data.phone,
+      "active", // status untuk customer baru selalu aktif
     );
 
     if (customerLocal) {
@@ -461,6 +468,13 @@ async function authenticateUser(
     include: { customer: true },
   });
   if (!user) throw new AuthServiceError(401, INVALID_CREDENTIALS_MESSAGE);
+
+  if (user.status !== "active") {
+    throw new AuthServiceError(
+      403,
+      "Akun Anda belum diaktifkan. Hubungi Admin untuk mengaktifkan akun.",
+    );
+  }
 
   const sessionPolicy = getSessionPolicy(user.role);
   // `jwtid` acak membuat setiap login menghasilkan token (dan token_hash)
