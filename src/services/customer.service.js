@@ -74,6 +74,12 @@ function pickAllowedFields(payload = {}, allowedFields) {
   );
 }
 
+// Membandingkan dua tanggal yang boleh kosong (null/undefined dianggap sama)
+function isSameDate(a, b) {
+  if (!a || !b) return !a && !b;
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
 async function listAllCustomers(query = {}) {
   const {
     page = 1,
@@ -236,15 +242,31 @@ async function updateCustomerById(customer_id, payload) {
       data.owner_location_id = location.location_id;
     }
 
-    // Update on runchise database — hanya untuk field yang dikenal Runchise
-    // (update email/dob saja tidak perlu menyentuh Runchise)
-    if (Object.keys(runchiseData).length > 0) {
-      if (!customer.runchise_id || !customer.runchise_location_id) {
-        throw new Error(
-          "Customer belum terhubung ke Runchise, tidak bisa update",
-        );
-      }
+    const isLinkedToRunchise = Boolean(
+      customer.runchise_id && customer.runchise_location_id,
+    );
 
+    // Update on runchise database — hanya untuk field yang dikenal Runchise
+    if (Object.keys(runchiseData).length > 0 && !isLinkedToRunchise) {
+      throw new Error(
+        "Customer belum terhubung ke Runchise, tidak bisa update",
+      );
+    }
+
+    // Email dan tanggal lahir ikut dikirim ke Runchise, tapi hanya ketika
+    // nilainya berubah supaya update field lain tidak mengirim ulang keduanya.
+    // Customer yang belum terhubung ke Runchise tetap boleh mengubah keduanya;
+    // perubahannya disimpan lokal saja.
+    if (isLinkedToRunchise) {
+      if (emailChanged) {
+        runchiseData.email = email;
+      }
+      if (data.dob !== undefined && !isSameDate(data.dob, customer.dob)) {
+        runchiseData.dob = data.dob;
+      }
+    }
+
+    if (Object.keys(runchiseData).length > 0) {
       await updateCustomer(
         customer.runchise_id,
         customer.runchise_location_id,

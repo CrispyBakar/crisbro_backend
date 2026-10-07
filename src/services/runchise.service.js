@@ -134,7 +134,14 @@ async function updateCustomer(
       throw new Error(JSON.stringify(validate.error.flatten().fieldErrors));
     }
 
-    const data = validate.data;
+    const data = { ...validate.data };
+    // Validasi mengubah dob jadi Date; ke Runchise dikirim sebagai tanggal saja
+    // ("YYYY-MM-DD"), bukan tanggal-jam. null (hapus tanggal lahir) diteruskan
+    // apa adanya.
+    if (data.dob) {
+      data.dob = new Date(data.dob).toISOString().slice(0, 10);
+    }
+
     const result = await runchiseClient.patch(
       `/locations/${runchise_location_id}/customers/${runchise_customer_id}`,
       data,
@@ -142,7 +149,9 @@ async function updateCustomer(
 
     return result.data?.customer ?? null;
   } catch (error) {
-    console.log(error.response.data);
+    // error.response kosong bila gagalnya bukan dari respons Runchise
+    // (validasi di atas, timeout, jaringan)
+    console.log(error.response?.data ?? error.message);
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.message
         ? JSON.stringify(error.response.data.message)
