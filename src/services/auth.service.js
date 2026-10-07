@@ -379,12 +379,9 @@ async function verifyUserPhone({ raw_phone, noRef }) {
 
   if (!user) throw new AuthServiceError(404, "User not found");
 
-  if (user.status === "active")
-    throw new AuthServiceError(400, "User has been activate");
-
   const verifiedUser = await prisma.user.update({
     where: { user_id: user.user_id },
-    data: { phone_verified: true, status: "active" },
+    data: { phone_verified: true },
   });
 
   // NOTIFY TO ADMIN
