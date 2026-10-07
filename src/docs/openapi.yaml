@@ -627,7 +627,10 @@ paths:
         Perubahan diteruskan ke Runchise terlebih dahulu; field berasal dari
         Runchise dapat tertimpa saat sync berikutnya. Minimal satu field harus
         dikirim. Perubahan nomor telepon menonaktifkan akun dan membatalkan
-        verifikasi telepon (user harus aktivasi ulang via WhatsApp).
+        verifikasi telepon (user harus aktivasi ulang via WhatsApp). `email`
+        dan `dob` ikut diteruskan ke Runchise bila nilainya berubah; untuk
+        customer yang belum terhubung ke Runchise keduanya hanya disimpan
+        lokal.
       security:
         - bearerAuth: []
         - cookieAuth: []
