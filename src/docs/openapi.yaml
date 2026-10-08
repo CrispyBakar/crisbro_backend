@@ -3069,6 +3069,13 @@ components:
           description: UUID produk lokal dari product_ids, maximum_qty_applied_to_products, get_product_ids, dan reward_products
           items:
             type: string
+        terms_conditions:
+          type: string
+          description: Syarat dan ketentuan; hanya disimpan di database lokal
+        promo_type:
+          type: string
+          enum: [general_promo, loyalty_promo]
+          description: Hanya disimpan di database lokal
         created_at:
           type: string
           format: date-time
@@ -3216,6 +3223,7 @@ components:
           goal,
           start_date,
           owner_location_id,
+          promo_type,
           promo_rule_attributes,
           promo_reward_attributes,
         ]
@@ -3280,6 +3288,14 @@ components:
         owner_location_id:
           type: number
           description: ID lokasi Runchise
+        promo_type:
+          type: string
+          enum: [general_promo, loyalty_promo]
+          description: Hanya disimpan di database lokal; tidak dikirim ke Runchise
+        terms_conditions:
+          type: string
+          default: ""
+          description: Hanya disimpan di database lokal; tidak dikirim ke Runchise
         promo_schedules:
           type: array
           items:
@@ -3316,6 +3332,13 @@ components:
             type: number
         owner_location_id:
           type: number
+        promo_type:
+          type: string
+          enum: [general_promo, loyalty_promo]
+          description: Hanya disimpan di database lokal; tidak dikirim ke Runchise
+        terms_conditions:
+          type: string
+          description: Hanya disimpan di database lokal; tidak dikirim ke Runchise
         promo_rule_attributes:
           $ref: "#/components/schemas/PromoRuleAttributes"
         promo_reward_attributes:

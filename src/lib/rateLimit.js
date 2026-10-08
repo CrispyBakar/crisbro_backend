@@ -172,6 +172,27 @@ const emailVerificationUserLimiter = createDedicatedLimiter({
   keyGenerator: (req) => `user:${req.user?.user_id ?? "anonymous"}`,
 });
 
+const MAX_EMAIL_KEY_LENGTH = 128;
+
+function forgotPasswordEmailKey(req) {
+  const email =
+    typeof req.body?.email === "string"
+      ? req.body.email.trim().toLowerCase()
+      : "";
+  return email ? `email:${email.slice(0, MAX_EMAIL_KEY_LENGTH)}` : "email:kosong";
+}
+
+// Endpoint publik ini menghasilkan email. Kuota per alamat email mencegah
+// inbox yang sama dibanjiri link reset dari banyak IP.
+const forgotPasswordEmailLimiter = createDedicatedLimiter({
+  prefix: "forgot-password-email",
+  windowMs: TWO_MINUTES,
+  max: 3,
+  message:
+    "Terlalu banyak permintaan reset password untuk email ini. Silakan coba lagi nanti.",
+  keyGenerator: forgotPasswordEmailKey,
+});
+
 // Retry sinkronisasi memanggil API eksternal. Prefix terpisah memastikan
 // pengiriman email dan retry sync tidak saling menghabiskan kuota.
 const runchiseSyncTargetLimiter = createDedicatedLimiter({
@@ -247,6 +268,7 @@ async function pruneRateLimitCounters() {
 module.exports = {
   authIpLimiter,
   emailVerificationUserLimiter,
+  forgotPasswordEmailLimiter,
   globalLimiter,
   loginAccountKey,
   loginAccountLimiter,

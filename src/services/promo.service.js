@@ -107,7 +107,14 @@ async function findPromo(promo_id, include) {
 
 // A failed local sync can be retried by remote ID without repeating remote create.
 // product_ids is undefined when the caller has no product data; stored IDs are then kept.
-async function synchronizePromo(runchise_id, promo_id, response, product_ids) {
+// local_fields (promo_type, terms_conditions) never come from Runchise; omitted ones are kept.
+async function synchronizePromo(
+  runchise_id,
+  promo_id,
+  response,
+  product_ids,
+  local_fields,
+) {
   let saved;
   try {
     const raw = response ?? (await getPromo(runchise_id));
@@ -119,7 +126,7 @@ async function synchronizePromo(runchise_id, promo_id, response, product_ids) {
         ? await getListPromoCodes(runchise_id)
         : [],
     );
-    saved = await savePromo(promo, codes, promo_id, product_ids);
+    saved = await savePromo(promo, codes, promo_id, product_ids, local_fields);
   } catch (cause) {
     const error = promoError(
       "PROMO_SYNC_FAILED",
@@ -178,6 +185,7 @@ const listPromoQuerySchema = z.object({
 
 async function createPromoService(payload) {
   const data = createPromoSchema.parse(payload);
+  const { promo_type, terms_conditions } = data;
   const product_ids = await resolveProductIds(data);
   const response = await createPromo(data);
   if (!response)
@@ -195,7 +203,10 @@ async function createPromoService(payload) {
       id.error,
     );
   }
-  return synchronizePromo(id.data, undefined, response, product_ids ?? []);
+  return synchronizePromo(id.data, undefined, response, product_ids ?? [], {
+    promo_type,
+    terms_conditions,
+  });
 }
 
 async function listPromoService(query = {}) {
@@ -263,7 +274,11 @@ async function updatePromoService(promo_id, payload) {
     );
   const existing = await findPromo(promo_id);
   const product_ids = await resolveProductIds(data);
-  const response = await updatePromo(existing.runchise_id, data);
+  // promo_type and terms_conditions are local-only; skip the remote write when nothing else changed.
+  const { promo_type, terms_conditions, ...remote } = data;
+  const response = Object.keys(remote).length
+    ? await updatePromo(existing.runchise_id, remote)
+    : undefined;
   // Read the full representation: a PATCH response may contain only changed fields.
   if (
     response?.id !== undefined &&
@@ -280,11 +295,18 @@ async function updatePromoService(promo_id, payload) {
     promo_id,
     undefined,
     product_ids,
+    { promo_type, terms_conditions },
   );
 }
 
 // Create dan update menggunakan pemetaan respons Runchise yang sama.
-async function savePromo(runchisePromo, codes, promo_id, product_ids) {
+async function savePromo(
+  runchisePromo,
+  codes,
+  promo_id,
+  product_ids,
+  local_fields,
+) {
   try {
     const locationIds = [
       ...new Set([
@@ -335,6 +357,7 @@ async function savePromo(runchisePromo, codes, promo_id, product_ids) {
           channel: runchisePromo.channel,
           location_ids: location_ids,
           product_ids: product_ids,
+          ...local_fields,
         };
         const promo = promo_id
           ? await tx.promo.update({ where: { promo_id }, data: promoData })

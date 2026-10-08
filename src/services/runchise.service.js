@@ -447,7 +447,8 @@ async function createPromo(payload) {
       throw validate.error;
     }
 
-    const data = validate.data;
+    // promo_type dan terms_conditions hanya disimpan di database lokal.
+    const { promo_type, terms_conditions, ...data } = validate.data;
     const result = await runchiseClient.post(`/promos`, data);
 
     return result.data?.promo ?? null;

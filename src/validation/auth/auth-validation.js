@@ -1,5 +1,11 @@
 const { z } = require("zod");
 
+const passwordSchema = z
+  .string()
+  .min(8)
+  .regex(/[A-Z]/, "Password harus mengandung huruf besar")
+  .regex(/[0-9]/, "Password harus mengandung angka");
+
 const registerSchemaValidation = z.object({
   referral_code: z.string().optional(),
   name: z.string(),
@@ -12,11 +18,7 @@ const registerSchemaValidation = z.object({
     }),
   username: z.string().min(6),
   email: z.string().email("Format email tidak valid"),
-  password: z
-    .string()
-    .min(8)
-    .regex(/[A-Z]/, "Password harus mengandung huruf besar")
-    .regex(/[0-9]/, "Password harus mengandung angka"),
+  password: passwordSchema,
   role: z.string().default("customer"),
   location_id: z.number(),
 });
@@ -43,4 +45,18 @@ const loginSchemaValidation = z
     path: ["email"],
   });
 
-module.exports = { registerSchemaValidation, loginSchemaValidation };
+const forgotPasswordSchemaValidation = z.object({
+  email: z.string().trim().email("Format email tidak valid"),
+});
+
+const resetPasswordSchemaValidation = z.object({
+  token: z.string().trim().min(1, "Token wajib diisi").max(200),
+  new_password: passwordSchema,
+});
+
+module.exports = {
+  registerSchemaValidation,
+  loginSchemaValidation,
+  forgotPasswordSchemaValidation,
+  resetPasswordSchemaValidation,
+};

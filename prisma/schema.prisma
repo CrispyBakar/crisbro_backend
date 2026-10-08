@@ -1,17 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider = "prisma-client-js"
-  // Build Netlify berjalan di Ubuntu, sedangkan Netlify Functions berjalan di
-  // AWS Lambda (Amazon Linux, OpenSSL 3); engine keduanya harus ikut dibuat.
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
-}
-
-datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 generator erd {
@@ -19,20 +8,10 @@ generator erd {
   output   = "../prisma/crisbro_erd.svg"
 }
 
-enum Role {
-  admin
-  marketing
-  customer
-}
-
-enum StatusUser {
-  active
-  inactive
-}
-
-enum StatusReferral {
-  pending
-  completed
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model RateLimitCounter {
@@ -44,35 +23,32 @@ model RateLimitCounter {
 }
 
 model User {
-  user_id                    String     @id @default(uuid())
-  email                      String     @unique
-  username                   String     @unique
+  email                      String             @unique
   password_hash              String
-  phone                      String?    @unique
-  role                       Role       @default(marketing)
-  email_verification_token   String?
+  created_at                 DateTime           @default(now())
+  updated_at                 DateTime           @updatedAt
   email_verification_expires DateTime?
-  email_verified             Boolean    @default(false)
-  referral_code              String?    @unique
-  no_referensi               String?    @unique
-  phone_verified             Boolean    @default(false)
-  status                     StatusUser @default(inactive)
-  created_at                 DateTime   @default(now())
-  updated_at                 DateTime   @updatedAt
-
-  referral_program    ReferralProgram?
-  sessions            Session[]
-  customer            Customer?          @relation("UserToCustomer")
-  created_customers   Customer[]         @relation("CreatedBy")
-  updated_customers   Customer[]         @relation("LastUpdatedBy")
-  admin_activity_logs AdminActivityLog[]
-  referrals_made      Referral[]         @relation("Referrer")
-  received_referrals  Referral[]         @relation("Referred")
+  email_verification_token   String?
+  forgot_password_token      String?
+  email_verified             Boolean            @default(false)
+  phone                      String?            @unique
+  phone_verified             Boolean            @default(false)
+  user_id                    String             @id @default(uuid())
+  username                   String             @unique
+  role                       Role               @default(marketing)
+  referral_code              String?            @unique
+  status                     StatusUser         @default(inactive)
+  no_referensi               String?            @unique
+  admin_activity_logs        AdminActivityLog[]
+  created_customers          Customer[]         @relation("CreatedBy")
+  updated_customers          Customer[]         @relation("LastUpdatedBy")
+  customer                   Customer?          @relation("UserToCustomer")
+  received_referrals         Referral[]         @relation("Referred")
+  referrals_made             Referral[]         @relation("Referrer")
+  referral_program           ReferralProgram?
+  sessions                   Session[]
 }
 
-// Satu baris per login. JWT tetap membawa batas absolut; baris ini yang
-// menentukan apakah token masih boleh dipakai (logout/revoke = hapus baris)
-// dan menyimpan batas idle yang bergeser (`expires_at`).
 model Session {
   session_id   String   @id @default(uuid())
   user_id      String
@@ -82,8 +58,7 @@ model Session {
   ip_address   String?
   last_used_at DateTime @default(now())
   created_at   DateTime @default(now())
-
-  user User @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  user         User     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([expires_at])
@@ -102,8 +77,7 @@ model AdminActivityLog {
   ip_address    String?
   user_agent    String?
   created_at    DateTime @default(now())
-
-  actor User? @relation(fields: [actor_user_id], references: [user_id])
+  actor         User?    @relation(fields: [actor_user_id], references: [user_id])
 
   @@index([actor_user_id])
   @@index([action])
@@ -112,82 +86,73 @@ model AdminActivityLog {
 }
 
 model ReferralProgram {
-  referral_id    String   @id @default(uuid())
-  owner_referral String   @unique
+  referral_id    String     @id @default(uuid())
   expires_at     DateTime
   point_reward   Int
+  created_at     DateTime   @default(now())
+  updated_at     DateTime   @updatedAt
+  owner_referral String     @unique
   point_given    Int
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-
-  user      User?      @relation(fields: [owner_referral], references: [user_id])
-  referrals Referral[]
+  referrals      Referral[]
+  user           User       @relation(fields: [owner_referral], references: [user_id])
 }
 
 model Referral {
-  referral_id         String         @id @default(uuid())
+  referral_id         String          @id @default(uuid())
   referral_program_id String
   referrer_id         String
   referred_id         String
   point_awarded       Int
-  status              StatusReferral @default(pending)
-  created_at          DateTime       @default(now())
-
-  program  ReferralProgram @relation(fields: [referral_program_id], references: [referral_id])
-  referrer User            @relation("Referrer", fields: [referrer_id], references: [user_id])
-  referred User            @relation("Referred", fields: [referred_id], references: [user_id])
+  status              StatusReferral  @default(pending)
+  created_at          DateTime        @default(now())
+  program             ReferralProgram @relation(fields: [referral_program_id], references: [referral_id])
+  referred            User            @relation("Referred", fields: [referred_id], references: [user_id])
+  referrer            User            @relation("Referrer", fields: [referrer_id], references: [user_id])
 
   @@index([referrer_id])
 }
 
 model Customer {
-  customer_id               String    @id @default(uuid())
-  user_id                   String?    @unique
-  runchise_id               Int?      @unique
-  runchise_location_id      Int?
-  runchise_synced_at        DateTime?
+  user_id                   String?                @unique
+  runchise_id               Int?                   @unique
   name                      String
   phone_number              String?
-  normalized_phone_number   String?
-  phone_number_country_code Int       @default(62)
-  address                   String?   @db.Text
+  phone_number_country_code Int                    @default(62)
+  address                   String?
   province                  String?
   city                      String?
   country                   String?
   postal_code               String?
-  dob                       DateTime? @db.Date
-  gender                    String? // male | female | unknown
-  status                    String? // active | inactive
-  balance                   Decimal   @default(0.0) @db.Decimal(12, 2) // Menggunakan Decimal untuk financial safety
-  member_since              DateTime? @db.Date
-  total_point               Int       @default(0)
-  available_point           Int       @default(0)
+  dob                       DateTime?              @db.Date
+  gender                    String?
+  status                    String?
+  balance                   Decimal                @default(0.0) @db.Decimal(12, 2)
+  member_since              DateTime?              @db.Date
   owner_location_id         String?
   created_by_id             String?
   last_updated_by_id        String?
-  created_at                DateTime  @default(now())
-  updated_at                DateTime  @updatedAt
-  
-
-  // Relations
-  user            User?      @relation("UserToCustomer", fields: [user_id], references: [user_id])
-  owner_location  Location? @relation(fields: [owner_location_id], references: [location_id])
-  created_by      User?     @relation("CreatedBy", fields: [created_by_id], references: [user_id])
-  last_updated_by User?     @relation("LastUpdatedBy", fields: [last_updated_by_id], references: [user_id])
-
-  point_history     PointHistory[]
-  sale_transactions SaleTransaction[]
-  customer_point_history  CustomerPointHistory[]
+  created_at                DateTime               @default(now())
+  updated_at                DateTime               @updatedAt
+  available_point           Int                    @default(0)
+  customer_id               String                 @id @default(uuid())
+  normalized_phone_number   String?
+  runchise_location_id      Int?
+  runchise_synced_at        DateTime?
+  total_point               Int                    @default(0)
+  created_by                User?                  @relation("CreatedBy", fields: [created_by_id], references: [user_id])
+  last_updated_by           User?                  @relation("LastUpdatedBy", fields: [last_updated_by_id], references: [user_id])
+  owner_location            Location?              @relation(fields: [owner_location_id], references: [location_id])
+  user                      User?                  @relation("UserToCustomer", fields: [user_id], references: [user_id])
+  customer_point_history    CustomerPointHistory[]
+  point_history             PointHistory[]
+  redeemTransaction         RedeemTransaction[]
+  sale_transactions         SaleTransaction[]
 
   @@index([phone_number])
   @@index([normalized_phone_number])
   @@index([runchise_location_id])
   @@index([created_at])
 }
-
-// ───────────────────────────────────────────────
-// BRAND & LOCATIONS
-// ───────────────────────────────────────────────
 
 model SubBrand {
   sub_brand_id           String   @id @default(uuid())
@@ -202,26 +167,25 @@ model SubBrand {
 }
 
 model Location {
-  location_id      String   @id @default(uuid())
-  runchise_id      Int?     @unique
+  runchise_id      Int?              @unique
   name             String
-  shipping_address String?
   city             String?
-  postal_code      String?
   province         String?
-  country          String?
-  contact_number   String?
-  status           String?
-  branch_type      String?
-  gmap_address     String?  @db.Text
-  longitude        String?
   latitude         String?
+  longitude        String?
+  created_at       DateTime          @default(now())
+  updated_at       DateTime          @updatedAt
+  location_id      String            @id @default(uuid())
+  branch_type      String?
+  contact_number   String?
+  country          String?
+  gmap_address     String?
+  postal_code      String?
+  shipping_address String?
+  status           String?
   sub_brands       String[]
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
-
-  customers Customer[]
-  saleTransaction SaleTransaction[]
+  customers        Customer[]
+  saleTransaction  SaleTransaction[]
 }
 
 model MenuCategory {
@@ -237,18 +201,17 @@ model PointHistory {
   id                   String   @id @default(uuid())
   customer_id          String
   reward_redemption_id Int?
-  points_change        Int // positif = earn, negatif = redeem
-  type                 String // earn | redeem | bonus
+  points_change        Int
+  type                 String
   description          String?
   created_at           DateTime @default(now())
-
-  customer Customer @relation(fields: [customer_id], references: [customer_id])
+  customer             Customer @relation(fields: [customer_id], references: [customer_id])
 }
 
 model RewardsCatalog {
   id              Int      @id @default(autoincrement())
   name            String
-  description     String?  @db.Text
+  description     String?
   points_required Int
   image_url       String?
   is_active       Boolean  @default(true)
@@ -259,7 +222,6 @@ model RewardsCatalog {
 model SaleTransaction {
   transaction_id                String    @id @default(uuid())
   customer_id                   String
-  location_id                   String?
   runchise_id                   Int?      @unique
   runchise_brand_id             Int?
   runchise_sales_no             String?
@@ -269,12 +231,6 @@ model SaleTransaction {
   net_sales                     Float?
   location_name                 String?
   order_type_name               String?
-  point_from_transaction        Int?
-  total_point                   Int?
-  earned_point                  Int?
-  redeemed_point                String?
-  available_point               Int?
-  products                      Json?
   subtotal                      Float?
   net_sales_after_tax           Float?
   sales_time                    DateTime?
@@ -283,201 +239,238 @@ model SaleTransaction {
   loyalty_discount_fee          String?
   created_at                    DateTime?
   updated_at                    DateTime?
+  location_id                   String?
+  available_point               Int?
+  earned_point                  Int?
+  products                      Json?
+  redeemed_point                String?
+  total_point                   Int?
+  point_from_transaction        Int?
+  customer                      Customer  @relation(fields: [customer_id], references: [customer_id])
+  location                      Location? @relation(fields: [location_id], references: [location_id])
 
-  customer Customer @relation(fields: [customer_id], references: [customer_id])
-  location Location? @relation(fields: [location_id], references: [location_id])
-
-  @@index(location_id)
-  @@index(runchise_id)
+  @@index([location_id])
+  @@index([runchise_id])
   @@index([location_id, sales_time])
 }
 
 model Token {
   token_id      String   @id @default(uuid())
   token_code    String   @unique
-  token_type    String
   access_token  String?
   refresh_token String?
-  expires_at    DateTime
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
+  token_type    String
+  expires_at    DateTime
 }
 
 model LoyaltyProduct {
-  loyalty_product_id            String    @id   @default(uuid())
-  runchise_loyalty_product_id   Int       @unique
-  runchise_product_id           Int
-  point_needed                  Int
-  product_name                  String
-  product_sku                   String
-  product_description           String?
-  product_image_url             String?
-  product_unit_name             String?
-  max_redeem                    Int
-  is_select_all_location        Boolean
-  location_ids                  String[]
-  product_location_ids          String[]
-  created_at                    DateTime @default(now())
-  updated_at                    DateTime  @updatedAt
+  loyalty_product_id          String   @id @default(uuid())
+  point_needed                Int
+  product_name                String
+  product_sku                 String
+  product_description         String?
+  product_image_url           String?
+  product_unit_name           String?
+  max_redeem                  Int
+  is_select_all_location      Boolean
+  created_at                  DateTime @default(now())
+  updated_at                  DateTime @updatedAt
+  product_location_ids        String[]
+  runchise_loyalty_product_id Int      @unique
+  runchise_product_id         Int
+  location_ids                String[]
 
-  @@index(runchise_loyalty_product_id)
-  @@index(runchise_product_id)
-  @@index(product_name)
+  @@index([runchise_loyalty_product_id])
+  @@index([runchise_product_id])
+  @@index([product_name])
 }
 
 model Promo {
-  promo_id          String    @id   @default(uuid())
-  runchise_id       Int       @unique
+  runchise_id       Int          @unique
   name              String?
+  status            String
+  channel           String?
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
   goal              String?
+  location_ids      String[]
+  location_type     String?
+  owner_location_id String
+  promo_id          String       @id @default(uuid())
   start_date        DateTime?
   end_date          DateTime?
-  status            String
-  owner_location_id String
-  location_type     String?
-  channel           String?
-  location_ids      String[]
   product_ids       String[]
-  created_at        DateTime   @default(now())
-  updated_at        DateTime   @updatedAt
-
-  promoRule         PromoRule?
-  promoReward       PromoReward?
+  promo_type        PromoType    @default(loyalty_promo)
+  terms_conditions  String       @default("")
   PromoCode         PromoCode[]
+  promoReward       PromoReward?
+  promoRule         PromoRule?
 
-  @@index(name)
-  @@index(status)
+  @@index([name])
+  @@index([status])
 }
 
 model PromoRule {
-  promo_rule_id                     String    @id   @default(uuid())
-  promo_id                          String @unique
-  runchise_promo_rule_id            Int  @unique
-  order_types                       String
-  maximum_qty_applied_to_products   String
-  use_promotion_code                Boolean?
-  promotion_code_usage_type         String?
-  promotion_code_source             String?
+  promo_rule_id                           String   @id @default(uuid())
+  promo_id                                String   @unique
+  runchise_promo_rule_id                  Int      @unique
+  order_types                             String
+  maximum_qty_applied_to_products         String
+  use_promotion_code                      Boolean?
+  promotion_code_usage_type               String?
+  promotion_code_source                   String?
   promotion_code_number_of_generated_code Int?
-  promotion_code_maximum_usage      Int?
-  combine_promo_rule                String?
-  member_only                       Boolean?
-  maximum_redemption_location_setting String?
-  created_at                        DateTime  @default(now())
-  updated_at                        DateTime  @updatedAt
+  promotion_code_maximum_usage            Int?
+  combine_promo_rule                      String?
+  member_only                             Boolean?
+  maximum_redemption_location_setting     String?
+  created_at                              DateTime @default(now())
+  updated_at                              DateTime @updatedAt
+  promo                                   Promo    @relation(fields: [promo_id], references: [promo_id])
 
-  promo   Promo   @relation(fields: [promo_id], references: [promo_id])
-
-  @@index(promo_id)
+  @@index([promo_id])
 }
 
 model PromoReward {
-  promo_reward_id     String    @id @default(uuid())
-  promo_id            String    @unique
-  runchise_promo_reward_id  Int?    @unique
-  template            String?
-  free_of_charge      Boolean?
-  reward_product_condition  String?
-  discount_amount     String?
-  discount_is_percentage  Boolean?
-  discount_maximum    String?
-  discount_in_house_cost  String?
-  discount_external_cost  String?
-  apply_to_option_set   Boolean?
-  get_products        String[]
+  promo_reward_id             String   @id @default(uuid())
+  promo_id                    String   @unique
+  runchise_promo_reward_id    Int?     @unique
+  template                    String?
+  free_of_charge              Boolean?
+  reward_product_condition    String?
+  discount_amount             String?
+  discount_is_percentage      Boolean?
+  discount_maximum            String?
+  discount_in_house_cost      String?
+  discount_external_cost      String?
+  apply_to_option_set         Boolean?
+  get_products                String[]
   get_product_allow_multiple  Boolean?
   special_price_product_price String?
-  created_at        DateTime    @default(now())
-  updated_at        DateTime    @updatedAt
+  created_at                  DateTime @default(now())
+  updated_at                  DateTime @updatedAt
+  promo                       Promo    @relation(fields: [promo_id], references: [promo_id])
 
-  promo   Promo   @relation(fields: [promo_id], references: [promo_id])
-
-  @@index(promo_id)
-  @@index(template)
+  @@index([promo_id])
+  @@index([template])
 }
 
 model PromoCode {
-  promo_code_id         String  @id   @default(uuid())
-  promo_id              String
-  runchise_id           Int?    @unique
-  code                  String?
-  usage_type            String?
-  status                String?
-  maximum_usage         Int?
-  number_of_usage       Int?
-  last_usage            DateTime?
-  deactivate_at         DateTime?
-  deactivate_reason     String?
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @updatedAt
-
-  promo       Promo   @relation(fields: [promo_id], references: [promo_id])
+  promo_code_id     String              @id @default(uuid())
+  promo_id          String
+  code              String?
+  usage_type        String?
+  status            String?
+  maximum_usage     Int?
+  number_of_usage   Int?
+  last_usage        DateTime?
+  deactivate_at     DateTime?
+  deactivate_reason String?
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
+  runchise_id       Int?                @unique
+  promo             Promo               @relation(fields: [promo_id], references: [promo_id])
+  redeemTransaction RedeemTransaction[]
 }
 
 model SyncCheckpoints {
-  sync_id       String      @id @default(uuid())
-  job_category  JobCategory
-  runchise_location_id   Int
-  last_sync_id  Int?
-  created_at    DateTime    @default(now())
-  updated_at    DateTime    @updatedAt
+  sync_id              String      @id @default(uuid())
+  job_category         JobCategory
+  last_sync_id         Int?
+  created_at           DateTime    @default(now())
+  updated_at           DateTime    @updatedAt
+  runchise_location_id Int
 
   @@unique([job_category, runchise_location_id])
   @@index([job_category])
 }
 
 model CustomerPointHistory {
-  customer_point_history   String   @id   @default(uuid())
-  customer_id              String  
-  runchise_id              Int?    @unique
-  customer_point_id        Int?
-  point_type               String?
-  point_snapshot           Int?
-  point                    Int?
-  sale_transaction_uuid    String?
-  sale_transaction_id      Int?
-  sales_return_id          Int?
-  void_by                  String?
-  void_id                  Int?
-  void_reason              String
-  notes                    String
-  created_by_id            Int?
-  location_id              Int?
-  sales_no                 String?
-  expired_point            Int?
-  expired_at               DateTime?
+  customer_point_history    String    @id @default(uuid())
+  runchise_id               Int?      @unique
+  customer_point_id         Int?
+  point_type                String?
+  point_snapshot            Int?
+  point                     Int?
+  sale_transaction_uuid     String?
+  sale_transaction_id       Int?
+  sales_return_id           Int?
+  void_by                   String?
+  void_id                   Int?
+  void_reason               String
+  notes                     String
+  created_by_id             Int?
+  location_id               Int?
+  sales_no                  String?
+  expired_point             Int?
+  expired_at                DateTime?
   customer_expired_point_id Int?
   customer_order_uuid       String?
-  formatted_created_at    DateTime?
-  issued_at_time          DateTime?
-  point_type_description  String?
-  channel                 String?
+  formatted_created_at      DateTime?
+  issued_at_time            DateTime?
+  point_type_description    String?
+  channel                   String?
+  customer_id               String
+  customer                  Customer  @relation(fields: [customer_id], references: [customer_id], onDelete: Cascade)
 
-  customer              Customer  @relation(fields:[customer_id], references:[customer_id], onDelete: Cascade)
-
-  @@index(runchise_id)
-  @@index(customer_id)
+  @@index([runchise_id])
+  @@index([customer_id])
 }
 
 model Products {
-  product_id      String  @id   @default(uuid())
-  runchise_id     Int?    @unique
-  name            String? 
-  sku             String?
-  upc             String?
-  description     String?
-  internal_price  String?
-  sell_price      String?
-  status          String?
-  product_category  String?
-  image_url       String?
-  created_at      DateTime    @default(now())
-  updated_at      DateTime    @updatedAt
+  product_id       String   @id @default(uuid())
+  runchise_id      Int?     @unique
+  name             String?
+  sku              String?
+  upc              String?
+  description      String?
+  internal_price   String?
+  sell_price       String?
+  status           String?
+  product_category String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  image_url        String?
 
-  @@index(runchise_id)
-  @@index(name)
+  @@index([runchise_id])
+  @@index([name])
+}
+
+model RedeemTransaction {
+  redeem_transaction_id String    @id @default(uuid())
+  promo_code_id         String
+  customer_id           String
+  redeemed_at           DateTime  @default(now())
+  customer              Customer  @relation(fields: [customer_id], references: [customer_id], onDelete: Cascade)
+  promoCode             PromoCode @relation(fields: [promo_code_id], references: [promo_code_id], onDelete: Cascade)
+
+  @@index([promo_code_id])
+  @@index([customer_id])
+}
+
+enum Role {
+  admin
+  marketing
+  customer
+}
+
+enum StatusUser {
+  active
+  inactive
+}
+
+enum StatusReferral {
+  pending
+  completed
 }
 
 enum JobCategory {
   sale_transactions
+}
+
+enum PromoType {
+  general_promo
+  loyalty_promo
 }

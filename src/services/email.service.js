@@ -179,6 +179,57 @@ function sendEmailVerificationEmail({ to, name, verificationUrl, expiresAt }) {
   });
 }
 
+function sendResetPasswordEmail({ to, name, resetUrl, expiresAt }) {
+  const expiryText = new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(expiresAt);
+  const displayName = name || "Crisbro Member";
+  const escapedName = escapeHtml(displayName);
+  const escapedResetUrl = escapeHtml(resetUrl);
+  const escapedExpiryText = escapeHtml(expiryText);
+
+  return sendMail({
+    to,
+    subject: "Reset your password - Loyalty Crisbro",
+    text: [
+      "Reset your password",
+      "",
+      `Hello ${displayName},`,
+      "",
+      "We received a request to reset your password. Open the link below to set a new password:",
+      resetUrl,
+      "",
+      `This link can only be used once and is valid until ${expiryText} WIB.`,
+      "",
+      "If you did not request this, please ignore this email. Your password will not change.",
+    ].join("\n"),
+    html: `
+      <h2 style="margin:0 0 16px;font-family:Arial,sans-serif;color:#111827;">Reset your password</h2>
+      <p style="font-family:Arial,sans-serif;color:#374151;">Hello ${escapedName},</p>
+      <p style="font-family:Arial,sans-serif;color:#374151;">
+        We received a request to reset your password. Click the button below to set a new password.
+      </p>
+      <p>
+        <a href="${escapedResetUrl}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#e11d48;color:#ffffff;text-decoration:none;font-weight:700;">
+          Reset Password
+        </a>
+      </p>
+      <p style="font-family:Arial,sans-serif;color:#374151;">
+        You can also copy-paste the following link in your browser:
+      </p>
+      <p style="font-family:Arial,sans-serif;color:#374151;word-break:break-all;">${escapedResetUrl}</p>
+      <p style="font-family:Arial,sans-serif;color:#6b7280;font-size:13px;">
+        This link can only be used once and is valid until <strong>${escapedExpiryText} WIB</strong>.
+      </p>
+      <p style="font-family:Arial,sans-serif;color:#6b7280;font-size:13px;">
+        If you did not request this, please ignore this email. Your password will not change.
+      </p>
+    `,
+  });
+}
+
 function sendReferralValidationEmail({
   to,
   referrer,
@@ -253,6 +304,7 @@ function sendReferralValidationEmail({
 module.exports = {
   sendActivationEmail,
   sendEmailVerificationEmail,
+  sendResetPasswordEmail,
   sendReferralValidationEmail,
   sendMail,
 };
