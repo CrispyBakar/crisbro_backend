@@ -12,6 +12,7 @@ const {
   authIpLimiter,
   loginAccountLimiter,
   emailVerificationUserLimiter,
+  forgotPasswordEmailLimiter,
 } = require("../lib/rateLimit");
 const {
   register,
@@ -24,6 +25,8 @@ const {
   otpCodeValidation,
   sendEmailVerification,
   verifyEmail,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/auth.controller");
 
 // ===================== REGISTER =====================
@@ -61,5 +64,16 @@ router.get("/me", auth, requireRole("marketing", "admin"), profile);
 
 // ===================== CHANGE PASSWORD =====================
 router.post("/change-password", auth, authIpLimiter, changePassword);
+
+// ===================== FORGOT PASSWORD =====================
+// Publik: user yang lupa password tidak bisa login. Token dari link email
+// adalah buktinya saat mengisi password baru.
+router.post(
+  "/forgot-password",
+  authIpLimiter,
+  forgotPasswordEmailLimiter,
+  forgotPassword,
+);
+router.post("/reset-password", authIpLimiter, resetPassword);
 
 module.exports = router;

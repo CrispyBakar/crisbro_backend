@@ -111,6 +111,8 @@ const promoRewardAttributesSchema = z
   })
   .passthrough();
 
+const promoTypeSchema = z.enum(["general_promo", "loyalty_promo"]);
+
 const createPromoSchema = z
   .object({
     channel: z.string(),
@@ -130,6 +132,8 @@ const createPromoSchema = z
     location_group_ids: z.array(z.number()).default([]),
     exclude_location_group_ids: z.array(z.number()).default([]),
     owner_location_id: z.number().int().positive(),
+    promo_type: promoTypeSchema,
+    terms_conditions: z.string().default(""),
     promo_schedules: z.array(anyObject).nullable(),
     promo_rule_attributes: promoRuleAttributesSchema,
     promo_reward_attributes: promoRewardAttributesSchema,
@@ -138,6 +142,8 @@ const createPromoSchema = z
 
 // Update hanya memvalidasi field yang dikirim, tanpa menerapkan default create.
 const updatePromoSchema = createPromoSchema.partial().extend({
+  promo_type: promoTypeSchema.optional(),
+  terms_conditions: z.string().optional(),
   promo_rule_attributes: promoRuleAttributesSchema.partial().optional(),
   promo_reward_attributes: promoRewardAttributesSchema.partial().optional(),
 });

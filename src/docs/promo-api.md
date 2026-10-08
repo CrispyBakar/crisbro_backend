@@ -42,6 +42,15 @@ Missing rule/reward relations are `null`. Rule `order_types` and
 relations. Consumers must now read `item.promo`, `item.promo_rule`, and
 `item.promo_reward`. Status endpoints now return the synchronized detail object.
 
+## Local-only fields
+
+`promo_type` (`general_promo` or `loyalty_promo`, required on create) and
+`terms_conditions` (string, defaults to `""`) are stored only in the local database.
+They are removed from the payload before it is sent to Runchise. An update that
+contains only these fields does not call Runchise. Sync and status changes keep the
+stored values; a promo first saved through `POST /promos/sync/:runchise_id` gets the
+database defaults (`loyalty_promo`, `""`) until it is updated.
+
 ## Recovery and consistency
 
 All remote reads and response validation finish before the local write transaction.

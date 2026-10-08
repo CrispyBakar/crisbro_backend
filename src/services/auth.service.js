@@ -5,7 +5,10 @@ const prisma = require("../lib/prisma");
 const getJwtSecret = require("../lib/jwtSecret");
 const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
 const { getSessionPolicy } = require("../lib/sessionPolicy");
-const { sendReferralValidationEmail } = require("./email.service");
+const {
+  sendReferralValidationEmail,
+  sendResetPasswordEmail,
+} = require("./email.service");
 const {
   createEmailVerificationToken,
   deliverEmailVerificationSafely,
@@ -22,6 +25,11 @@ const INVALID_CREDENTIALS_MESSAGE =
 const DUMMY_PASSWORD_HASH =
   "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 const BCRYPT_ROUNDS = 10;
+const DEFAULT_RESET_PASSWORD_URL =
+  "https://crisbro-frontend.vercel.app/reset-password";
+const DEFAULT_RESET_PASSWORD_TTL_MINUTES = 60;
+const INVALID_RESET_TOKEN_MESSAGE =
+  "Tautan reset password tidak valid atau sudah kedaluwarsa";
 
 class AuthServiceError extends Error {
   constructor(statusCode, message, details) {
@@ -543,6 +551,165 @@ async function changeUserPassword(userId, currentPassword, newPassword) {
   });
 }
 
+// Hanya hash yang disimpan di database; token mentah hanya ada di link email,
+// sehingga kebocoran isi tabel User tidak bisa dipakai untuk reset password.
+function hashResetPasswordToken(token) {
+  return crypto.createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+function getResetPasswordTtlMs() {
+  const minutes = Number(process.env.RESET_PASSWORD_TTL_MINUTES);
+  return (
+    (Number.isFinite(minutes) && minutes > 0
+      ? minutes
+      : DEFAULT_RESET_PASSWORD_TTL_MINUTES) *
+    60 *
+    1000
+  );
+}
+
+function buildResetPasswordUrl(token) {
+  const base =
+    process.env.RESET_PASSWORD_URL ||
+    (process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL.replace(/\/+$/, "")}/reset-password`
+      : DEFAULT_RESET_PASSWORD_URL);
+  const url = new URL(base);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+// Tabel User hanya punya kolom forgot_password_token, tanpa kolom kedaluwarsa,
+// jadi batas waktunya dibawa di dalam token. Hash yang disimpan mencakup
+// seluruh token, sehingga batas waktu tidak bisa diubah tanpa membuat token
+// tidak cocok lagi dengan hash di database.
+function createResetPasswordToken() {
+  const expiresAt = new Date(Date.now() + getResetPasswordTtlMs());
+  const token = `${crypto.randomBytes(32).toString("hex")}.${expiresAt
+    .getTime()
+    .toString(36)}`;
+
+  return { token, expiresAt, tokenHash: hashResetPasswordToken(token) };
+}
+
+// Mengembalikan hash token, atau melempar error bila format salah/kedaluwarsa.
+function parseResetPasswordToken(rawToken) {
+  const token =
+    typeof rawToken === "string" ? rawToken.trim().toLowerCase() : "";
+  const match = /^[a-f0-9]{64}\.([a-z0-9]{1,11})$/.exec(token);
+  const expiresAtMs = match ? parseInt(match[1], 36) : NaN;
+
+  if (!(expiresAtMs > Date.now())) {
+    throw new AuthServiceError(400, INVALID_RESET_TOKEN_MESSAGE);
+  }
+
+  return hashResetPasswordToken(token);
+}
+
+// Token baru menimpa token lama, sehingga hanya link terakhir yang berlaku.
+async function issueResetPasswordLink(userId) {
+  const reset = createResetPasswordToken();
+  await prisma.user.update({
+    where: { user_id: userId },
+    data: { forgot_password_token: reset.tokenHash },
+  });
+
+  return {
+    resetUrl: buildResetPasswordUrl(reset.token),
+    expiresAt: reset.expiresAt,
+  };
+}
+
+/**
+ * Membuat token reset dan mengirim link-nya ke email user. Tidak melempar
+ * error untuk email yang tidak terdaftar atau kegagalan SMTP: controller
+ * selalu menjawab sama agar endpoint publik ini tidak bisa dipakai memetakan
+ * email yang terdaftar.
+ *
+ * Syaratnya hanya status "active" untuk semua role. phone_verified sengaja
+ * tidak diperiksa: customer yang belum verifikasi nomor tetap boleh reset.
+ */
+async function requestPasswordReset(rawEmail) {
+  const email =
+    typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+  if (!email) throw new AuthServiceError(400, "Email wajib diisi");
+
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" }, status: "active" },
+    orderBy: { user_id: "asc" },
+    select: { user_id: true, email: true, username: true },
+  });
+  if (!user) return;
+
+  const reset = await issueResetPasswordLink(user.user_id);
+
+  try {
+    const result = await sendResetPasswordEmail({
+      to: user.email,
+      name: user.username,
+      resetUrl: reset.resetUrl,
+      expiresAt: reset.expiresAt,
+    });
+
+    if (result?.skipped) {
+      console.warn(
+        `Email reset password tidak dikirim ke ${user.email}: ${result.reason}`,
+      );
+    }
+  } catch (error) {
+    console.error(`Gagal mengirim email reset password ke ${user.email}:`, error);
+  }
+}
+
+/**
+ * Versi WhatsApp untuk customer. Dipanggil webhook Qontak saat customer
+ * mengirim pesan reset dari nomornya sendiri, jadi kepemilikan nomor sudah
+ * dibuktikan oleh WhatsApp dan phone_verified tidak diperiksa. Mengembalikan
+ * link untuk dibalas bot, atau null bila nomor bukan milik customer aktif.
+ */
+async function requestPasswordResetByPhone(rawPhone) {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) return null;
+
+  const user = await prisma.user.findFirst({
+    where: {
+      phone: { in: phoneVariants(phone) },
+      role: "customer",
+      status: "active",
+    },
+    orderBy: { user_id: "asc" },
+    select: { user_id: true },
+  });
+  if (!user) return null;
+
+  return issueResetPasswordLink(user.user_id);
+}
+
+async function resetUserPassword(rawToken, newPassword) {
+  const tokenHash = parseResetPasswordToken(rawToken);
+  const user = await prisma.user.findFirst({
+    where: { forgot_password_token: tokenHash },
+    select: { user_id: true },
+  });
+  if (!user) throw new AuthServiceError(400, INVALID_RESET_TOKEN_MESSAGE);
+
+  const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  // Syarat token ikut di WHERE agar link hanya bisa dipakai sekali walau dua
+  // request memakainya bersamaan. Semua sesi dicabut seperti pada ganti
+  // password, sehingga sesi yang mungkin dikuasai orang lain ikut berakhir.
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.user.updateMany({
+      where: { user_id: user.user_id, forgot_password_token: tokenHash },
+      data: { password_hash: passwordHash, forgot_password_token: null },
+    });
+    if (count === 0) {
+      throw new AuthServiceError(400, INVALID_RESET_TOKEN_MESSAGE);
+    }
+
+    await revokeUserSessions(user.user_id, tx);
+  });
+}
+
 module.exports = {
   AuthServiceError,
   registerUser,
@@ -551,5 +718,8 @@ module.exports = {
   authenticateUser,
   getUserProfile,
   changeUserPassword,
+  requestPasswordReset,
+  requestPasswordResetByPhone,
+  resetUserPassword,
   buildLocalCustomerData,
 };

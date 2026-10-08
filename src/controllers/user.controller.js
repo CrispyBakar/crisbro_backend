@@ -38,6 +38,7 @@ function toPublicUser(user) {
     password_hash,
     email_verification_token,
     email_verification_expires,
+    forgot_password_token,
     ...publicUser
   } = user;
 

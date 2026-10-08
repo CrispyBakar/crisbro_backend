@@ -9,6 +9,8 @@ const {
 } = require("../lib/sessionCookie");
 const {
   registerSchemaValidation,
+  forgotPasswordSchemaValidation,
+  resetPasswordSchemaValidation,
 } = require("../validation/auth/auth-validation");
 const {
   AuthServiceError,
@@ -18,6 +20,8 @@ const {
   authenticateUser,
   getUserProfile,
   changeUserPassword,
+  requestPasswordReset,
+  resetUserPassword,
 } = require("../services/auth.service");
 const {
   EmailVerificationError,
@@ -36,6 +40,7 @@ function serializeAuthUser(user) {
     password_hash,
     email_verification_token,
     email_verification_expires,
+    forgot_password_token,
     ...safeUser
   } = user;
   if (safeUser.email === null) delete safeUser.email;
@@ -220,6 +225,54 @@ async function changePassword(req, res) {
   }
 }
 
+async function forgotPassword(req, res) {
+  const validation = forgotPasswordSchemaValidation.safeParse(req.body ?? {});
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      errors: validation.error.flatten().fieldErrors,
+    });
+  }
+
+  try {
+    await requestPasswordReset(validation.data.email);
+    // Jawaban sama untuk email terdaftar maupun tidak.
+    return successRequest({
+      res,
+      code: 200,
+      message:
+        "Jika email terdaftar, tautan reset password telah dikirim ke email tersebut",
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "Permintaan reset password gagal");
+  }
+}
+
+async function resetPassword(req, res) {
+  const validation = resetPasswordSchemaValidation.safeParse(req.body ?? {});
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      errors: validation.error.flatten().fieldErrors,
+    });
+  }
+
+  try {
+    await resetUserPassword(
+      validation.data.token,
+      validation.data.new_password,
+    );
+    clearSessionCookie(res);
+    return successRequest({
+      res,
+      code: 200,
+      message: "Password berhasil direset. Silakan login dengan password baru.",
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "Reset password gagal");
+  }
+}
+
 async function logout(req, res) {
   try {
     await revokeSession(req.user?.session_id);
@@ -254,5 +307,7 @@ module.exports = {
   logoutAllSessions,
   profile,
   changePassword,
+  forgotPassword,
+  resetPassword,
   serializeAuthUser,
 };

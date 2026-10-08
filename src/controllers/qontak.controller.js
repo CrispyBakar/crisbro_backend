@@ -1,7 +1,10 @@
 const {
   sendMessageViaBot,
 } = require("../integration/qontak/qontak.integration");
-const { verifyUserPhone } = require("../services/auth.service");
+const {
+  verifyUserPhone,
+  requestPasswordResetByPhone,
+} = require("../services/auth.service");
 const { badRequest, successRequest } = require("../utils/responseReuest");
 const { serializeAuthUser } = require("./auth.controller");
 
@@ -19,6 +22,21 @@ const failed_message = `Verifikasi akun *Crisbro* kamu belum berhasil. ❌\nDimo
 
 const success_message = `Yey, akun *Crisbro* kamu sudah aktif! 🎉\nSekarang kamu sudah resmi jadi bagian dari *Crisbro*. Yuk, langsung jelajahi dan nikmati semua fiturnya sekarang!\n\nhttps://app.crisbro.id`;
 
+// Baris pertama pesan WhatsApp yang dikirim customer untuk meminta reset password.
+const RESET_PASSWORD_KEYWORD = "RESET PASSWORD CRISBRO";
+
+const reset_failed_message = `Reset password akun *Crisbro* kamu belum berhasil. ❌\nNomor WhatsApp ini belum terdaftar atau akunnya belum aktif.\nSilahkan hubungi Admin *Crisbro*.`;
+
+function resetPasswordMessage({ resetUrl, expiresAt }) {
+  const expiryText = new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(expiresAt);
+
+  return `Berikut tautan untuk mengatur ulang password akun *Crisbro* kamu:\n\n${resetUrl}\n\nTautan hanya bisa dipakai satu kali dan berlaku sampai ${expiryText} WIB.\nJika kamu tidak meminta reset password, abaikan pesan ini.`;
+}
+
 async function sendBotMessageSafely({ room_id, text }) {
   try {
     await sendMessageViaBot({ room_id, text });
@@ -27,6 +45,27 @@ async function sendBotMessageSafely({ room_id, text }) {
     // failed request, otherwise Qontak will retry the same interaction.
     console.error("Failed to send Qontak bot reply:", flattenAxiosError(error));
   }
+}
+
+// Nomor pengirim pesan menjadi identitasnya: link hanya dibalas ke room
+// WhatsApp tempat permintaan itu datang.
+async function replyResetPasswordLink({ res, room_id, phone }) {
+  let text = reset_failed_message;
+
+  try {
+    const reset = await requestPasswordResetByPhone(phone);
+    if (reset) text = resetPasswordMessage(reset);
+  } catch (error) {
+    console.error(
+      "Qontak reset password request failed:",
+      flattenAxiosError(error),
+    );
+  }
+
+  await sendBotMessageSafely({ room_id, text });
+
+  // Sama seperti aktivasi: selalu 200 agar Qontak tidak mengulang pesan ini.
+  return successRequest({ res, code: 200, data: null });
 }
 
 async function receiveQontakMessageInteraction(req, res) {
@@ -62,6 +101,9 @@ async function receiveQontakMessageInteraction(req, res) {
     // Loloskan kalau tidak bisa di split
     // Karena pasti bukan aktivasi crisbro
     if (!identifier) return successRequest({ res, data: null, code: 200 });
+
+    if (identifier[0].trim().toUpperCase() === RESET_PASSWORD_KEYWORD)
+      return replyResetPasswordLink({ res, room_id, phone });
 
     // Loloskan apabila bukan aktivasi crisbro
     if (identifier[0] !== "AKTIVASI CRISBRO")
