@@ -93,10 +93,9 @@ function shouldSkipGlobalLimiter(req) {
   // masih memuat prefix `/api`, sedangkan adapter serverless bisa saja
   // menghapusnya sebelum meneruskan request ke app.
   const path = String(req.path || "").replace(/^\/api(?=\/|$)/, "") || "/";
-  return (
-    path.startsWith("/cron/") ||
-    ["/login", "/register", "/activate"].includes(path)
-  );
+  // /register sengaja TIDAK dikecualikan lagi: ia kini punya authIpLimiter
+  // sendiri, dan limiter global tetap menjadi lapis cadangan terhadap abuse.
+  return path.startsWith("/cron/") || ["/login", "/activate"].includes(path);
 }
 
 // Per alamat IP. Menahan satu sumber yang membombardir endpoint autentikasi.
@@ -125,9 +124,19 @@ const authIpLimiter = createDedicatedLimiter({
 const MAX_ACCOUNT_KEY_LENGTH = 24;
 
 function loginAccountKey(req) {
-  const normalized = normalizePhone(req.body?.phone_number);
-  if (!normalized) return "tanpa-nomor";
-  return String(normalized).slice(0, MAX_ACCOUNT_KEY_LENGTH);
+  // WAJIB memakai field yang sama dengan login(): skema & service memakai
+  // `phone` (bukan `phone_number`) dan `email`. Memakai field yang salah
+  // membuat semua percobaan jatuh ke satu kunci "tanpa-nomor", sehingga kuota
+  // per-akun lumpuh dan sebaliknya 20 login gagal bisa mengunci login semua
+  // akun sekaligus.
+  const normalized = normalizePhone(req.body?.phone);
+  if (normalized) return String(normalized).slice(0, MAX_ACCOUNT_KEY_LENGTH);
+
+  const email =
+    typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (email) return `email:${email.slice(0, MAX_EMAIL_KEY_LENGTH)}`;
+
+  return "tanpa-identitas";
 }
 
 // Per nomor telepon. Tanpa ini, penyerang yang memakai banyak IP tetap bisa

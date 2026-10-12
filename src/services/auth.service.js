@@ -341,10 +341,26 @@ async function sendUserReferenceCode(userId) {
     exist = await prisma.user.findUnique({ where: { no_referensi: code } });
   }
 
+  // Hanya kolom aman yang dikembalikan: password_hash dan token verifikasi/
+  // reset tidak boleh ikut ke response controller (endpoint /send-otp).
   const userReference = await prisma.user.update({
     where: { user_id: userId },
     data: {
       no_referensi: code,
+    },
+    select: {
+      user_id: true,
+      email: true,
+      username: true,
+      phone: true,
+      role: true,
+      email_verified: true,
+      referral_code: true,
+      no_referensi: true,
+      phone_verified: true,
+      status: true,
+      created_at: true,
+      updated_at: true,
     },
   });
 

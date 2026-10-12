@@ -30,7 +30,9 @@ const {
 } = require("../controllers/auth.controller");
 
 // ===================== REGISTER =====================
-router.post("/register", register);
+// Register memicu pencarian customer ke Runchise + tulis DB, jadi dibatasi
+// per-IP seperti endpoint autentikasi lain agar tidak bisa dibanjiri/enumerasi.
+router.post("/register", authIpLimiter, register);
 
 // ===================== LOGIN =====================
 router.post("/login", authIpLimiter, loginAccountLimiter, login);
