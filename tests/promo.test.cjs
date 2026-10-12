@@ -19,7 +19,7 @@ function fixture() {
   return { id: 42, name: 'Promo', goal: 'increase_average_sale', status: 'active', start_date: '04/09/2026', end_date: null, owner_location_id: 10, locations: [{ id: 10 }], promo_rule: { id: 43, order_types: [], maximum_qty_applied_to_products: [], use_promotion_code: true, promotion_code_maximum_usage: '10' }, promo_reward: { id: 44, get_products: null, discount_in_house_cost: 100 } };
 }
 function harness() {
-  const h = { remote: fixture(), codes: [{ id: 45, code: 'ABC', number_of_usage: '2', maximum_usage: '10', usage_type: 'multiple', last_usage: null }], state: { promo: null, rule: null, reward: null, codes: [] }, creates: 0, generations: [], transactions: 0, batches: 0, locationQueries: 0, missingLocation: false, failCodes: false, failWrite: false, products: [{ runchise_id: 182229, product_id: PRODUCT_ID, name: 'Ayam Crisbar' }, { runchise_id: 182230, product_id: OTHER_PRODUCT_ID, name: 'Nasi' }] };
+  const h = { remote: fixture(), codes: [{ id: 45, code: 'ABC', number_of_usage: '2', maximum_usage: '10', usage_type: 'multiple', last_usage: null }], state: { promo: null, rule: null, reward: null, codes: [] }, creates: 0, generations: [], transactions: 0, batches: 0, locationQueries: 0, missingLocation: false, failCodes: false, failWrite: false, products: [{ runchise_id: 182229, product_id: PRODUCT_ID, name: 'Ayam Crisbar' }, { runchise_id: 182230, product_id: OTHER_PRODUCT_ID, name: 'Nasi' }], loyaltyProducts: [{ product_id: PRODUCT_ID, promo_id: null }, { product_id: OTHER_PRODUCT_ID, promo_id: null }] };
   const prisma = {
     promo: { findUnique: async () => h.state.promo && { ...h.state.promo, promoRule: h.state.rule, promoReward: h.state.reward, PromoCode: h.state.codes }, findMany: () => Promise.resolve(h.state.promo ? [{ ...h.state.promo, promoRule: h.state.rule, promoReward: h.state.reward }] : []), count: () => Promise.resolve(h.state.promo ? 1 : 0) },
     location: { findMany: async () => { h.locationQueries++; return h.missingLocation ? [] : [{ runchise_id: 10, location_id: ID }]; } },
@@ -33,6 +33,7 @@ function harness() {
         promo: { upsert: async ({ create, update }) => { draft.promo = updateDefined(draft.promo || { promo_id: ID }, draft.promo ? update : create); return draft.promo; }, update: async ({ data }) => { updateDefined(draft.promo, data); return draft.promo; } },
         promoRule: { upsert: async ({ create, update }) => draft.rule = updateDefined(draft.rule || {}, draft.rule ? update : create) },
         promoReward: { upsert: async ({ create, update }) => draft.reward = updateDefined(draft.reward || {}, draft.reward ? update : create) },
+        loyaltyProduct: { updateMany: async ({ where, data }) => { for (const row of h.loyaltyProducts) { if (where.promo_id !== undefined && row.promo_id !== where.promo_id) continue; if (where.product_id.notIn?.includes(row.product_id)) continue; if (where.product_id.in && !where.product_id.in.includes(row.product_id)) continue; Object.assign(row, data); } } },
         promoCode: {
           findMany: async ({ where }) => where.runchise_id ? draft.codes.filter(c => where.runchise_id.in.includes(c.runchise_id)) : draft.codes.filter(c => c.promo_id === where.promo_id),
           createMany: async ({ data }) => { h.batches++; if (h.failWrite) throw Error('write failed'); draft.codes.push(...data); },
@@ -251,4 +252,39 @@ test('product_ids map request products to local IDs on create/update and are kep
   await assert.rejects(h.service.updatePromoService(ID, { promo_rule_attributes: { product_ids: [999] } }), { code: 'PRODUCT_NOT_SYNCED', statusCode: 422 });
   await assert.rejects(h.service.createPromoService({ ...payload, promo_rule_attributes: { ...payload.promo_rule_attributes, product_ids: [999] } }), { code: 'PRODUCT_NOT_SYNCED' });
   assert.equal(h.creates, creates);
+});
+
+test('loyalty promo links its products on LoyaltyProduct.promo_id; a plain sync leaves links alone', async () => {
+  const h = harness();
+  const linked = () => h.loyaltyProducts.map(row => row.promo_id);
+  const swapProducts = { promo_rule_attributes: { product_ids: [182230] }, promo_reward_attributes: { get_product_ids: [], reward_products: [] } };
+
+  await h.service.createPromoService({ ...payload, promo_type: 'loyalty_promo' });
+  assert.deepEqual(linked(), [ID, null]);
+
+  await h.service.updatePromoService(ID, swapProducts);
+  assert.deepEqual(linked(), [null, ID]);
+
+  // Another promo took the product over; syncing this one must not take it back.
+  h.loyaltyProducts[1].promo_id = 'other-promo';
+  await h.service.syncPromoService(42);
+  await h.service.deactivatePromoService(ID);
+  assert.deepEqual(linked(), [null, 'other-promo']);
+
+  h.loyaltyProducts[1].promo_id = ID;
+  await h.service.updatePromoService(ID, { promo_type: 'general_promo' });
+  assert.deepEqual(linked(), [null, null]);
+  await h.service.updatePromoService(ID, { promo_type: 'loyalty_promo' });
+  assert.deepEqual(linked(), [null, ID]);
+});
+
+test('create and update reject more than one product before any remote write', async () => {
+  const h = harness();
+  const twoProducts = { product_ids: [182229, 182230] };
+  await assert.rejects(h.service.createPromoService({ ...payload, promo_type: 'loyalty_promo', promo_rule_attributes: { ...payload.promo_rule_attributes, ...twoProducts } }), { code: 'TOO_MANY_PRODUCTS', statusCode: 422 });
+  assert.equal(h.creates, 0);
+
+  await h.service.createPromoService({ ...payload, promo_type: 'loyalty_promo' });
+  await assert.rejects(h.service.updatePromoService(ID, { promo_rule_attributes: twoProducts }), { code: 'TOO_MANY_PRODUCTS', statusCode: 422 });
+  assert.deepEqual([...h.state.promo.product_ids], [PRODUCT_ID]);
 });

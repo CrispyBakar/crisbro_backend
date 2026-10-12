@@ -31,6 +31,17 @@ const DEFAULT_RESET_PASSWORD_TTL_MINUTES = 60;
 const INVALID_RESET_TOKEN_MESSAGE =
   "Tautan reset password tidak valid atau sudah kedaluwarsa";
 
+// User untuk respons login dan profile. Relasi customerAcquisition hanya
+// dipakai sebagai penanda has_acquisition (lihat serializeAuthUser), jadi
+// cukup ID-nya.
+const AUTH_USER_INCLUDE = {
+  customer: {
+    include: {
+      customerAcquisition: { select: { customer_acquisition_id: true } },
+    },
+  },
+};
+
 class AuthServiceError extends Error {
   constructor(statusCode, message, details) {
     super(message);
@@ -470,7 +481,7 @@ async function authenticateUser(
 
   const user = await prisma.user.findUnique({
     where: { user_id: credentials.user_id },
-    include: { customer: true },
+    include: AUTH_USER_INCLUDE,
   });
   if (!user) throw new AuthServiceError(401, INVALID_CREDENTIALS_MESSAGE);
 
@@ -515,7 +526,7 @@ async function authenticateUser(
 async function getUserProfile(userId) {
   const user = await prisma.user.findUnique({
     where: { user_id: userId },
-    include: { customer: true },
+    include: AUTH_USER_INCLUDE,
   });
   if (!user) throw new AuthServiceError(404, "User tidak ditemukan");
 

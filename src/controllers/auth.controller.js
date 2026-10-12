@@ -47,9 +47,17 @@ function serializeAuthUser(user) {
   if (safeUser.phone_number === null) delete safeUser.phone_number;
 
   if (safeUser.customer) {
+    const { customerAcquisition, ...customer } = safeUser.customer;
+
     safeUser.customer = {
-      ...safeUser.customer,
-      balance: Number(safeUser.customer.balance ?? 0),
+      ...customer,
+      balance: Number(customer.balance ?? 0),
+      // Penanda untuk modal "tahu Crisbar dari mana": cukup sudah/belum, isi
+      // jawabannya tidak ikut dikirim. Hanya ada bila relasinya ikut dimuat
+      // (login dan profile).
+      ...(customerAcquisition !== undefined
+        ? { has_acquisition: Boolean(customerAcquisition) }
+        : {}),
     };
   }
 

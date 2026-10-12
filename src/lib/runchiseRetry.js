@@ -36,12 +36,38 @@ function getRetryDelayMs(error, attempt) {
   return Math.min(delay, RUNCHISE_RETRY_MAX_DELAY_MS);
 }
 
-async function withRunchiseRetry(fn) {
+// Runchise benar-benar membalas error (429/5xx). Error jaringan/timeout tidak
+// termasuk: request mungkin sudah diproses, jadi tidak aman diulang untuk
+// request non-idempoten seperti adjust point.
+function isRunchiseErrorResponse(error) {
+  const status = getAxiosError(error)?.response?.status;
+  return status === 429 || status >= 500;
+}
+
+// Koneksi belum sempat terbentuk, jadi request pasti belum sampai ke Runchise.
+const CONNECT_ERROR_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+// Hasil request tidak diketahui: Runchise bisa saja sudah memprosesnya walau
+// kita menerima error (timeout, koneksi putus di tengah jalan, 5xx dari
+// gateway). Untuk request non-idempoten, hasilnya wajib dicek dulu sebelum
+// diulang atau dibatalkan.
+function isAmbiguousRunchiseError(error) {
+  const axiosError = getAxiosError(error);
+  if (!axiosError) return false;
+  const status = axiosError.response?.status;
+  if (status !== undefined) return status >= 500;
+  return !CONNECT_ERROR_CODES.has(axiosError.code);
+}
+
+async function withRunchiseRetry(
+  fn,
+  { shouldRetry = isTransientRunchiseError } = {},
+) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      if (attempt >= RUNCHISE_MAX_RETRIES || !isTransientRunchiseError(error)) {
+      if (attempt >= RUNCHISE_MAX_RETRIES || !shouldRetry(error)) {
         throw error;
       }
       await sleep(getRetryDelayMs(error, attempt));
@@ -49,4 +75,9 @@ async function withRunchiseRetry(fn) {
   }
 }
 
-module.exports = { withRunchiseRetry, isTransientRunchiseError };
+module.exports = {
+  withRunchiseRetry,
+  isTransientRunchiseError,
+  isRunchiseErrorResponse,
+  isAmbiguousRunchiseError,
+};

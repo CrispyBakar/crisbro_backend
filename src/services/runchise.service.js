@@ -382,9 +382,50 @@ async function generateLoyaltyProducts() {
     // Selected loyalties is active
     const activeLoyalties = loyalties.filter((loyalty) => loyalty.is_active);
 
+    const loyaltyProducts = activeLoyalties.at(0)?.loyalty_products ?? [];
+    const runchiseProductIds = [
+      ...new Set(loyaltyProducts.map((lp) => lp.product_id)),
+    ];
+
+    const findLocalProducts = () =>
+      prisma.products.findMany({
+        where: { runchise_id: { in: runchiseProductIds } },
+        select: { product_id: true, runchise_id: true },
+      });
+
+    // LoyaltyProduct.product_id needs a local Products row, so sync products
+    // from Runchise first when any of them is missing
+    let localProducts = await findLocalProducts();
+    if (localProducts.length < runchiseProductIds.length) {
+      await getAllProducts();
+      localProducts = await findLocalProducts();
+    }
+
+    const productIdByRunchiseId = new Map(
+      localProducts.map((product) => [product.runchise_id, product.product_id]),
+    );
+
     const productsData = [];
-    for (const loyalty_product of activeLoyalties.at(0)?.loyalty_products ??
-      []) {
+    const usedProductIds = new Set();
+    for (const loyalty_product of loyaltyProducts) {
+      const product_id = productIdByRunchiseId.get(loyalty_product.product_id);
+
+      if (!product_id) {
+        console.warn(
+          `Loyalty product ${loyalty_product.id} dilewati: product ${loyalty_product.product_id} tidak ditemukan di Runchise`,
+        );
+        continue;
+      }
+
+      // product_id is unique on LoyaltyProduct
+      if (usedProductIds.has(product_id)) {
+        console.warn(
+          `Loyalty product ${loyalty_product.id} dilewati: product ${loyalty_product.product_id} sudah dipakai loyalty product lain`,
+        );
+        continue;
+      }
+      usedProductIds.add(product_id);
+
       const product_locations = await Promise.all(
         loyalty_product.product_locations.map(async (location) => {
           const productLocation = await prisma.location.findUnique({
@@ -407,6 +448,7 @@ async function generateLoyaltyProducts() {
       const location_ids_filtered = location_ids.filter(Boolean);
 
       productsData.push({
+        product_id,
         runchise_loyalty_product_id: loyalty_product.id,
         runchise_product_id: loyalty_product.product_id,
         point_needed: loyalty_product.point_needed,
@@ -425,8 +467,22 @@ async function generateLoyaltyProducts() {
     // Runchise can change loyalty product ids when updating the loyalty
     // program, so rebuild from scratch instead of upserting
     const products = await prisma.$transaction(async (tx) => {
+      // Rows are recreated, so carry the promo link over by product_id
+      const linkedToPromo = await tx.loyaltyProduct.findMany({
+        where: { promo_id: { not: null } },
+        select: { product_id: true, promo_id: true },
+      });
+      const promoIdByProductId = new Map(
+        linkedToPromo.map((row) => [row.product_id, row.promo_id]),
+      );
+
       await tx.loyaltyProduct.deleteMany({});
-      await tx.loyaltyProduct.createMany({ data: productsData });
+      await tx.loyaltyProduct.createMany({
+        data: productsData.map((data) => ({
+          ...data,
+          promo_id: promoIdByProductId.get(data.product_id) ?? null,
+        })),
+      });
 
       return tx.loyaltyProduct.findMany({
         orderBy: { runchise_loyalty_product_id: "asc" },
@@ -853,6 +909,7 @@ async function adjustCustomerPoint(
   runchise_customer_id,
   point_adjustment,
   type_adjust,
+  notes,
 ) {
   try {
     const point =
@@ -862,7 +919,7 @@ async function adjustCustomerPoint(
 
     const payload = {
       point: point,
-      notes: `Adjustment point ${type_adjust} by system`,
+      notes: notes ? notes : `Adjustment point ${type_adjust} by system`,
     };
 
     const result = await runchiseClient.post(

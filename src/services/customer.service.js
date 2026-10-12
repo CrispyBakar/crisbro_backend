@@ -116,6 +116,16 @@ async function listAllCustomers(query = {}) {
         skip,
         take,
         orderBy: sanitizeOrderBy(sort_by, sort_order),
+        include: {
+          user: {
+            select: {
+              user_id: true,
+              status: true,
+              phone_verified: true,
+              email_verified: true,
+            },
+          },
+        },
       }),
       prisma.customer.count({ where }),
     ]);

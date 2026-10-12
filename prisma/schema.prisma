@@ -147,6 +147,7 @@ model Customer {
   point_history             PointHistory[]
   redeemTransaction         RedeemTransaction[]
   sale_transactions         SaleTransaction[]
+  customerAcquisition       CustomerAcquisition?
 
   @@index([phone_number])
   @@index([normalized_phone_number])
@@ -267,6 +268,7 @@ model Token {
 
 model LoyaltyProduct {
   loyalty_product_id          String   @id @default(uuid())
+  product_id                  String   @unique
   point_needed                Int
   product_name                String
   product_sku                 String
@@ -281,8 +283,14 @@ model LoyaltyProduct {
   runchise_loyalty_product_id Int      @unique
   runchise_product_id         Int
   location_ids                String[]
+  promo_id                    String?
+
+  product        Products     @relation(fields:[product_id], references: [product_id], onDelete: Cascade)
+  promo          Promo?       @relation(fields: [promo_id], references: [promo_id])
 
   @@index([runchise_loyalty_product_id])
+  @@index([product_id])
+  @@index([promo_id])
   @@index([runchise_product_id])
   @@index([product_name])
 }
@@ -307,6 +315,7 @@ model Promo {
   PromoCode         PromoCode[]
   promoReward       PromoReward?
   promoRule         PromoRule?
+  loyaltyProduct    LoyaltyProduct[]
 
   @@index([name])
   @@index([status])
@@ -371,6 +380,7 @@ model PromoCode {
   created_at        DateTime            @default(now())
   updated_at        DateTime            @updatedAt
   runchise_id       Int?                @unique
+  is_claimed        Boolean             @default(false) // lokal saja, tidak ikut sync Runchise
   promo             Promo               @relation(fields: [promo_id], references: [promo_id])
   redeemTransaction RedeemTransaction[]
 }
@@ -433,6 +443,7 @@ model Products {
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
   image_url        String?
+  loyaltyProduct   LoyaltyProduct?
 
   @@index([runchise_id])
   @@index([name])
@@ -442,11 +453,24 @@ model RedeemTransaction {
   redeem_transaction_id String    @id @default(uuid())
   promo_code_id         String
   customer_id           String
+  points_spent          Int       @default(0) // snapshot poin saat redeem
   redeemed_at           DateTime  @default(now())
   customer              Customer  @relation(fields: [customer_id], references: [customer_id], onDelete: Cascade)
   promoCode             PromoCode @relation(fields: [promo_code_id], references: [promo_code_id], onDelete: Cascade)
 
+  @@unique([customer_id, promo_code_id]) // penjamin utama anti-duplikat
   @@index([promo_code_id])
+}
+
+model CustomerAcquisition {
+  customer_acquisition_id     String    @id   @default(uuid())
+  customer_id                 String    @unique
+  source                      String
+  captured_via                String
+  created_at                  DateTime  @default(now())
+
+  customer      Customer    @relation(fields:[customer_id], references:[customer_id], onDelete: NoAction)
+
   @@index([customer_id])
 }
 

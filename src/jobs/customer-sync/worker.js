@@ -75,8 +75,21 @@ const worker = new Worker(
                   where: { runchise_id: promoCode.id },
                   data: {
                     status: promoCode.status,
-                    last_usage: new Date(promoCode.last_usage),
-                    deactivate_at: new Date(promoCode.deactivate_at),
+                    // Tanpa ini jumlah pemakaian tetap 0 walau kodenya sudah
+                    // dipakai di kasir. undefined: kolomnya tidak diubah.
+                    number_of_usage:
+                      promoCode.number_of_usage == null
+                        ? undefined
+                        : Number(promoCode.number_of_usage),
+                    // Runchise mengirim null untuk kode yang belum dipakai /
+                    // belum dinonaktifkan; new Date(null) akan tersimpan
+                    // sebagai 1 Januari 1970.
+                    last_usage: promoCode.last_usage
+                      ? new Date(promoCode.last_usage)
+                      : null,
+                    deactivate_at: promoCode.deactivate_at
+                      ? new Date(promoCode.deactivate_at)
+                      : null,
                     deactivate_reason: promoCode.deactivate_reason,
                   },
                 });

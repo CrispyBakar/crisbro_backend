@@ -32,6 +32,8 @@ tags:
   - name: Sale Transactions
   - name: Webhook Qontak
   - name: Dashboard
+  - name: Redeem Transactions
+  - name: Customer Acquisitions
 
 paths:
   /:
@@ -2346,6 +2348,400 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/redeem-transactions:
+    get:
+      tags: [Redeem Transactions]
+      summary: List voucher yang sudah di-redeem beserta customer-nya (paginated)
+      description: >-
+        Khusus admin dan marketing. Tiap item menyertakan customer yang
+        menukar, promo code, promo, dan produknya. `terms_conditions` hanya
+        ada di endpoint detail.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - in: query
+          name: search
+          description: Cari berdasarkan nama / nomor telepon customer, kode voucher, atau nama promo
+          schema:
+            type: string
+            default: ""
+        - in: query
+          name: customer_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: promo_id
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/RedeemSortOrderQuery"
+      responses:
+        "200":
+          description: Daftar voucher yang sudah di-redeem
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/RedeemedVoucherWithCustomer"
+                          meta:
+                            $ref: "#/components/schemas/PageMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Redeem Transactions]
+      summary: Tukar poin customer dengan voucher loyalty product
+      description: >-
+        Khusus role customer dengan nomor telepon terverifikasi (403 bila
+        belum). Customer diambil dari sesi login, bukan dari body. Satu promo
+        code yang belum diklaim dipilih acak dari promo milik loyalty product,
+        lalu poin dipotong di database lokal dan di Runchise. Bila request ke
+        Runchise timeout atau dibalas 5xx, riwayat poin Runchise dicek dulu:
+        redeem hanya dibatalkan (poin dikembalikan) kalau poin dipastikan belum
+        terpotong.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [loyalty_product_id]
+              properties:
+                loyalty_product_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Voucher berhasil diklaim
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          redeem_transaction_id:
+                            type: string
+                            format: uuid
+                          promo_code:
+                            type: string
+                          points_spent:
+                            type: integer
+                          remaining_points:
+                            type: integer
+                            description: Saldo poin customer setelah dipotong
+                          redeemed_at:
+                            type: string
+                            format: date-time
+        "400":
+          description: Voucher habis, atau promo belum mulai / sudah berakhir
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Customer atau loyalty product tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "410":
+          description: Promo sudah tidak aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: >-
+            Validasi body gagal, poin tidak cukup, atau customer belum terhubung
+            ke Runchise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "502":
+          description: >-
+            Pemotongan poin di Runchise gagal dan dipastikan belum terpotong;
+            redeem dibatalkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/redeem-transactions/me:
+    get:
+      tags: [Redeem Transactions]
+      summary: List voucher yang sudah di-redeem customer login (paginated)
+      description: >-
+        Khusus role customer. Customer diambil dari sesi login.
+        `terms_conditions` hanya ada di endpoint detail.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/RedeemSortOrderQuery"
+      responses:
+        "200":
+          description: Daftar voucher milik customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/RedeemedVoucher"
+                          meta:
+                            $ref: "#/components/schemas/PageMeta"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/redeem-transactions/me/{redeem_transaction_id}:
+    get:
+      tags: [Redeem Transactions]
+      summary: Detail voucher yang sudah di-redeem customer login
+      description: >-
+        Khusus role customer. Menyertakan produk, periode promo, dan syarat &
+        ketentuan. Voucher milik customer lain dijawab 404.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RedeemTransactionIdPath"
+      responses:
+        "200":
+          description: Detail voucher
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/RedeemedVoucher"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/redeem-transactions/{redeem_transaction_id}:
+    get:
+      tags: [Redeem Transactions]
+      summary: Detail voucher yang sudah di-redeem beserta customer-nya
+      description: >-
+        Khusus admin dan marketing. Menyertakan customer yang menukar, produk,
+        periode promo, dan syarat & ketentuan.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RedeemTransactionIdPath"
+      responses:
+        "200":
+          description: Detail voucher
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/RedeemedVoucherWithCustomer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/customer-acquisitions:
+    post:
+      tags: [Customer Acquisitions]
+      summary: Catat sumber akuisisi untuk customer tertentu
+      description: >-
+        Khusus admin dan marketing. Satu customer hanya punya satu data
+        akuisisi; percobaan kedua dijawab 409.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/CustomerAcquisitionRequest"
+                - type: object
+                  required: [customer_id]
+                  properties:
+                    customer_id:
+                      type: string
+                      format: uuid
+      responses:
+        "201":
+          description: Data akuisisi tersimpan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomerAcquisition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/customer-acquisitions/customer/{customer_id}:
+    get:
+      tags: [Customer Acquisitions]
+      summary: Lihat sumber akuisisi milik customer tertentu
+      description: >-
+        Khusus admin dan marketing. Dijawab 404 bila customer tidak ditemukan
+        atau customer belum punya data akuisisi; keduanya dibedakan lewat
+        `message`.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+      responses:
+        "200":
+          description: Data akuisisi customer
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomerAcquisition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/customer-acquisitions/me:
+    post:
+      tags: [Customer Acquisitions]
+      summary: Customer login mencatat sumber akuisisinya sendiri
+      description: >-
+        Khusus role customer. Customer diambil dari sesi login, bukan dari
+        body. Satu customer hanya punya satu data akuisisi; percobaan kedua
+        dijawab 409.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerAcquisitionRequest"
+      responses:
+        "201":
+          description: Data akuisisi tersimpan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CustomerAcquisition"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2411,6 +2807,21 @@ components:
         type: string
         format: uuid
       description: UUID promo lokal
+    RedeemTransactionIdPath:
+      in: path
+      name: redeem_transaction_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RedeemSortOrderQuery:
+      in: query
+      name: sort_order
+      description: Urutan berdasarkan `redeemed_at`
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
 
   responses:
     BadRequest:
@@ -2537,6 +2948,148 @@ components:
           type: integer
         total_pages:
           type: integer
+
+    RedeemedVoucher:
+      type: object
+      properties:
+        redeem_transaction_id:
+          type: string
+          format: uuid
+        points_spent:
+          type: integer
+          description: Poin yang dipotong saat redeem
+        redeemed_at:
+          type: string
+          format: date-time
+        promo_code:
+          type: object
+          properties:
+            promo_code_id:
+              type: string
+              format: uuid
+            code:
+              type: string
+              nullable: true
+            status:
+              type: string
+              nullable: true
+            maximum_usage:
+              type: integer
+              nullable: true
+            number_of_usage:
+              type: integer
+              nullable: true
+              description: Jumlah pemakaian kode di kasir, ikut sync Runchise
+            last_usage:
+              type: string
+              format: date-time
+              nullable: true
+        promo:
+          type: object
+          properties:
+            promo_id:
+              type: string
+              format: uuid
+            name:
+              type: string
+              nullable: true
+            status:
+              type: string
+            start_date:
+              type: string
+              format: date-time
+              nullable: true
+            end_date:
+              type: string
+              format: date-time
+              nullable: true
+            terms_conditions:
+              type: string
+              description: Syarat dan ketentuan. Hanya ada di endpoint detail.
+            location_ids:
+              type: array
+              description: >-
+                location_id lokal outlet tempat voucher ini berlaku. Hanya ada
+                di endpoint detail.
+              items:
+                type: string
+                format: uuid
+        products:
+          type: array
+          description: Produk dari promo voucher ini
+          items:
+            type: object
+            properties:
+              product_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                nullable: true
+              sku:
+                type: string
+                nullable: true
+              description:
+                type: string
+                nullable: true
+              image_url:
+                type: string
+                nullable: true
+
+    RedeemedVoucherWithCustomer:
+      allOf:
+        - $ref: "#/components/schemas/RedeemedVoucher"
+        - type: object
+          properties:
+            customer:
+              type: object
+              description: Customer yang me-redeem voucher
+              properties:
+                customer_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                phone_number:
+                  type: string
+                  nullable: true
+                phone_number_country_code:
+                  type: integer
+                email:
+                  type: string
+                  nullable: true
+
+    CustomerAcquisitionRequest:
+      type: object
+      required: [source, captured_via]
+      properties:
+        source:
+          type: string
+          maxLength: 100
+          description: Dari mana customer mengenal brand
+          example: instagram
+        captured_via:
+          type: string
+          maxLength: 100
+          description: Lewat apa data ini dicatat
+          example: registration_form
+
+    CustomerAcquisition:
+      type: object
+      properties:
+        customer_acquisition_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        source:
+          type: string
+        captured_via:
+          type: string
+        created_at:
+          type: string
+          format: date-time
 
     RegisterRequest:
       type: object
@@ -2965,6 +3518,45 @@ components:
           type: array
           items:
             type: string
+        promo_id:
+          type: string
+          format: uuid
+          nullable: true
+        has_promo:
+          type: boolean
+          description: false bila loyalty product belum dihubungkan ke promo
+        is_voucher_available:
+          type: boolean
+          description: >-
+            false bila belum ada promo, atau semua promo code-nya nonaktif /
+            sudah diklaim. Loyalty product ini tidak bisa di-redeem selama
+            nilainya false.
+        promo:
+          type: object
+          nullable: true
+          description: Ringkasan promo; promo code tidak pernah ikut dikirim
+          properties:
+            promo_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+            start_date:
+              type: string
+              format: date-time
+              nullable: true
+            end_date:
+              type: string
+              format: date-time
+              nullable: true
+            terms_conditions:
+              type: string
+            location_ids:
+              type: array
+              description: location_id lokal outlet tempat voucher promo ini berlaku
+              items:
+                type: string
+                format: uuid
         created_at:
           type: string
           format: date-time
@@ -3213,6 +3805,9 @@ components:
         deactivate_reason:
           type: string
           nullable: true
+        is_claimed:
+          type: boolean
+          description: Sudah diklaim customer lewat redeem loyalty. Hanya ada di database lokal, tidak ikut sync Runchise.
 
     PromoCreateRequest:
       type: object

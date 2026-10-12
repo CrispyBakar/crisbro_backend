@@ -53,6 +53,13 @@ function requestProductIds(data) {
 async function resolveProductIds(data) {
   const runchiseIds = requestProductIds(data);
   if (!runchiseIds) return undefined;
+  if (runchiseIds.length > 1) {
+    throw promoError(
+      "TOO_MANY_PRODUCTS",
+      "Promo hanya boleh memiliki satu produk",
+      422,
+    );
+  }
   const products = await prisma.products.findMany({
     where: { runchise_id: { in: runchiseIds } },
     select: { runchise_id: true, product_id: true },
@@ -299,6 +306,24 @@ async function updatePromoService(promo_id, payload) {
   );
 }
 
+// Points LoyaltyProduct.promo_id at the loyalty promo that uses the product.
+// The column holds one promo, so the promo saved last owns a shared product.
+async function linkLoyaltyProducts(tx, promo) {
+  const product_ids =
+    promo.promo_type === "loyalty_promo" ? promo.product_ids : [];
+
+  await tx.loyaltyProduct.updateMany({
+    where: { promo_id: promo.promo_id, product_id: { notIn: product_ids } },
+    data: { promo_id: null },
+  });
+  if (product_ids.length) {
+    await tx.loyaltyProduct.updateMany({
+      where: { product_id: { in: product_ids } },
+      data: { promo_id: promo.promo_id },
+    });
+  }
+}
+
 // Create dan update menggunakan pemetaan respons Runchise yang sama.
 async function savePromo(
   runchisePromo,
@@ -366,6 +391,15 @@ async function savePromo(
               create: { ...promoData, product_ids: product_ids ?? [] },
               update: promoData,
             });
+
+        // Only when the caller changed products or promo type: a plain sync
+        // (status, promo codes) must not take a product back from another promo.
+        if (
+          product_ids !== undefined ||
+          local_fields?.promo_type !== undefined
+        ) {
+          await linkLoyaltyProducts(tx, promo);
+        }
 
         const ruleData = {
           promo_id: promo.promo_id,

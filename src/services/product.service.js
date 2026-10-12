@@ -3,6 +3,7 @@ const {
   generateLoyaltyProducts,
   getAllProducts,
 } = require("./runchise.service");
+const { CLAIMABLE_PROMO_CODE } = require("./redeemTransaction.service");
 
 async function syncLoyaltyProducts() {
   try {
@@ -50,13 +51,41 @@ async function listLoyaltyProducts({ query, location_id, take, skip } = {}) {
         take,
         skip,
         orderBy: { product_name: "asc" },
+        include: {
+          // Endpoint ini publik, jadi kode voucher tidak boleh ikut terkirim:
+          // cukup info promo dan jumlah kode yang masih bisa diklaim.
+          promo: {
+            select: {
+              promo_id: true,
+              status: true,
+              start_date: true,
+              end_date: true,
+              location_ids: true,
+              terms_conditions: true,
+              _count: {
+                select: { PromoCode: { where: CLAIMABLE_PROMO_CODE } },
+              },
+            },
+          },
+        },
       }),
     ]);
 
     return {
       total,
       total_page: take ? Math.ceil(total / take) : 1,
-      loyalty_products,
+      loyalty_products: loyalty_products.map(({ promo, ...product }) => {
+        const { _count, ...promoInfo } = promo ?? {};
+
+        return {
+          ...product,
+          // false: loyalty product belum dihubungkan ke promo mana pun
+          has_promo: Boolean(promo),
+          // false: belum ada promo, atau semua kodenya nonaktif / sudah diklaim
+          is_voucher_available: (_count?.PromoCode ?? 0) > 0,
+          promo: promo ? promoInfo : null,
+        };
+      }),
     };
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
