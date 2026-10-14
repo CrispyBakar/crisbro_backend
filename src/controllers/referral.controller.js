@@ -14,6 +14,7 @@ const {
   DEFAULT_POINT_GIVEN,
   getDefaultExpiresTime,
 } = require("../constants/referralCodeValue");
+const { notifyUserSafely } = require("../services/push.service");
 
 const userIdSchema = z.string().uuid("User ID must be a valid UUID");
 const listReferralUsagesQuerySchema = z.object({
@@ -135,6 +136,28 @@ async function validateReferralCodeController(req, res) {
       error: response.message,
     });
   }
+
+  // Ditunggu sebelum response: Netlify Function bisa dibekukan begitu
+  // response terkirim. notifyUserSafely tidak pernah throw
+
+  const { referrer_user_id, referred_user_id, points_awarded } = response.data;
+
+  await Promise.all([
+    points_awarded.referrer > 0 &&
+      notifyUserSafely(referrer_user_id, {
+        title: "Referral berhasil! 🎁",
+        body: `Temanmu sudah terverifikasi. Kamu dapat +${points_awarded.referrer} poin`,
+        url: "/settings/point-history",
+        tag: "referral",
+      }),
+    points_awarded.referred > 0 &&
+      notifyUserSafely(referred_user_id, {
+        title: "Bonus referral masuk! 🎁",
+        body: `+${points_awarded.referred} poin sudah ditambahkan ke akunmu.`,
+        url: "/settings/point-history",
+        tag: "referral",
+      }),
+  ]);
 
   return successRequest({
     res,

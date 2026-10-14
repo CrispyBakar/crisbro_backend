@@ -21,4 +21,16 @@ const deactivateCustomerSchema = z.object({
   status: z.enum(["active", "inactive"]),
 });
 
-module.exports = { updateCustomerSchema, deactivateCustomerSchema };
+const adjustPointSchema = z
+  .object({
+    point: z.coerce.number().int().positive().max(1_000_000),
+    type: z.enum(["add", "subtract"]),
+    notes: z.string().trim().min(1).max(255).optional(),
+  })
+  .strict();
+
+module.exports = {
+  updateCustomerSchema,
+  deactivateCustomerSchema,
+  adjustPointSchema,
+};

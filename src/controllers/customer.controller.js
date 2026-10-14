@@ -11,13 +11,17 @@ const {
   updateCustomerById,
   listCustomerPointHistory,
   changeStatusCustomer,
+  adjustPointCustomer,
   generateAllCustomerRunchise,
   updateAllCustomerPointHistory,
+  syncronizeCustomerRunchise,
 } = require("../services/customer.service");
 const {
   updateCustomerSchema,
   deactivateCustomerSchema,
+  adjustPointSchema,
 } = require("../validation/customer/customer-validation");
+const { isAmbiguousRunchiseError } = require("../lib/runchiseRetry");
 
 const uuidSchema = z.string().uuid("ID must be a valid UUID");
 const listCustomersQuerySchema = z.object({
@@ -235,6 +239,67 @@ async function changeCustomerStatus(req, res) {
   }
 }
 
+async function adjustCustomerPoint(req, res) {
+  const idValidation = uuidSchema.safeParse(req.params.customer_id);
+
+  if (!idValidation.success) {
+    return validationError(res, idValidation.error);
+  }
+
+  const bodyValidation = adjustPointSchema.safeParse(req.body ?? {});
+
+  if (!bodyValidation.success) {
+    return validationError(res, bodyValidation.error);
+  }
+
+  try {
+    const { customer, synced } = await adjustPointCustomer(
+      idValidation.data,
+      bodyValidation.data,
+    );
+
+    return successRequest({
+      res,
+      data: { customer, synced },
+      message: synced
+        ? "Customer point adjusted successfully."
+        : "Poin sudah diubah di Runchise, tapi saldo lokal belum tersinkron. Jangan ulangi adjust; saldo akan diperbarui oleh sinkron harian.",
+    });
+  } catch (error) {
+    if (error.message === "Customer not found") {
+      return badRequest({ res, code: 404, error: error.message });
+    }
+
+    if (
+      error.message === "Poin customer tidak mencukupi" ||
+      error.message ===
+        "Customer belum terhubung ke Runchise, tidak bisa update"
+    ) {
+      return badRequest({ res, code: 422, error: error.message });
+    }
+
+    if (error.code === "RUNCHISE_REQUEST_FAILED") {
+      // Timeout/5xx: Runchise mungkin sudah memproses adjust, jadi admin
+      // harus cek riwayat poin dulu sebelum mencoba lagi
+      if (isAmbiguousRunchiseError(error)) {
+        return badRequest({
+          res,
+          code: 502,
+          error:
+            "Runchise tidak merespons dengan jelas. Cek riwayat poin customer sebelum mencoba lagi agar poin tidak terhitung dua kali.",
+        });
+      }
+
+      // 4xx dari Runchise (mis. payload ditolak): adjust pasti tidak terjadi
+      if (error.cause?.response?.status < 500) {
+        return badRequest({ res, code: 422, error: error.message });
+      }
+    }
+
+    return respondWithServerError(res, error, "Adjust customer point failed");
+  }
+}
+
 async function getMyCustomer(req, res) {
   try {
     const customer = await getCustomerByUserId(req.user.user_id);
@@ -428,16 +493,55 @@ async function generateAllCustomerPoint(req, res) {
   }
 }
 
+// Menarik data terbaru satu customer dari Runchise (profil, status, poin,
+// saldo) lalu menimpa data lokalnya.
+async function syncCustomer(req, res) {
+  const validation = uuidSchema.safeParse(req.params.customer_id);
+
+  if (!validation.success) {
+    return validationError(res, validation.error);
+  }
+
+  try {
+    const customer = await syncronizeCustomerRunchise(validation.data);
+
+    return successRequest({
+      res,
+      data: customer,
+      message: "Customer berhasil disinkronkan dari Runchise.",
+    });
+  } catch (error) {
+    if (error.message === "Customer not found") {
+      return badRequest({ res, code: 404, error: error.message });
+    }
+
+    if (
+      error.message ===
+      "Customer belum terhubung ke Runchise, tidak bisa update"
+    ) {
+      return badRequest({ res, code: 422, error: error.message });
+    }
+
+    if (error.code === "RUNCHISE_REQUEST_FAILED") {
+      return badRequest({ res, code: 502, error: error.message });
+    }
+
+    return respondWithServerError(res, error, "Sync customer failed");
+  }
+}
+
 module.exports = {
   listCustomers,
   getCustomer,
   getCustomerByUser,
   updateCustomer,
   changeCustomerStatus,
+  adjustCustomerPoint,
   getMyCustomer,
   updateMyCustomer,
   getCustomerPointHistory,
   generateAllCustomerPoint,
   getMyPointHistory,
   generateCustomers,
+  syncCustomer,
 };

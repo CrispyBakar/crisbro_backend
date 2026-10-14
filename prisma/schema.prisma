@@ -47,6 +47,7 @@ model User {
   referrals_made             Referral[]         @relation("Referrer")
   referral_program           ReferralProgram?
   sessions                   Session[]
+  push_subscriptions         PushSubscription[]
 }
 
 model Session {
@@ -472,6 +473,45 @@ model CustomerAcquisition {
   customer      Customer    @relation(fields:[customer_id], references:[customer_id], onDelete: NoAction)
 
   @@index([customer_id])
+}
+
+model PushSubscription {
+  push_subscription_id    String    @id   @default(uuid())
+  user_id                 String
+  endpoint                String    @unique
+  p256dh                  String
+  auth                    String
+  user_agent              String?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  user                    User      @relation(fields:[user_id], references:[user_id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model PushBroadcast {
+  push_broadcast_id     String      @id   @default(uuid())
+  title                 String
+  body                  String
+  url                   String              @default("/")
+  status                PushBroadcastStatus @default(pending)
+  sent_count            Int                 @default(0)
+  failed_count          Int                 @default(0)
+  error                 String?
+  created_by_id         String?
+  created_at            DateTime            @default(now())
+  started_at            DateTime?
+  finished_at           DateTime?
+
+  @@index([status, created_at])
+}
+
+enum PushBroadcastStatus {
+  pending
+  sending
+  done
+  failed
 }
 
 enum Role {

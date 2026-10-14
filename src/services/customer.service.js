@@ -8,6 +8,9 @@ const {
   activateCustomer,
   deactivateCustomer,
   generateAllCustomerHasPoint,
+  findCustomerByPhone,
+  adjustCustomerPoint,
+  getDetailCustomerById,
 } = require("./runchise.service");
 const { buildLocalCustomerData } = require("./auth.service");
 const {
@@ -529,6 +532,79 @@ async function changeStatusCustomer(customer_id, status) {
   }
 }
 
+// Saldo poin terbaru langsung dari Runchise. null bila customer tidak punya
+// nomor telepon atau data yang ditemukan bukan customer yang sama.
+async function fetchRunchisePoint(customer) {
+  if (!customer.phone_number) return null;
+
+  const remote = await withRunchiseRetry(() =>
+    findCustomerByPhone({ phone: customer.phone_number }),
+  );
+  if (!remote || Number(remote.id) !== customer.runchise_id) return null;
+
+  return {
+    available_point: Number(remote.available_point ?? 0),
+    total_point: Number(remote.total_point ?? 0),
+  };
+}
+
+// Menambah/mengurangi poin customer di Runchise, lalu menyelaraskan saldo dan
+// riwayat poin di DB lokal.
+async function adjustPointCustomer(customer_id, { point, type, notes }) {
+  const customer = await prisma.customer.findUnique({
+    where: { customer_id },
+  });
+
+  if (!customer) throw new Error("Customer not found");
+
+  if (!customer.runchise_id) {
+    throw new Error("Customer belum terhubung ke Runchise, tidak bisa update");
+  }
+
+  // Saldo dicek dari Runchise, bukan DB lokal yang bisa tertinggal, supaya
+  // poin tidak dikurangi melebihi saldo yang ada
+  if (type === "subtract") {
+    const current = await fetchRunchisePoint(customer);
+    const availablePoint = current?.available_point ?? customer.available_point;
+
+    if (point > availablePoint) {
+      throw new Error("Poin customer tidak mencukupi");
+    }
+  }
+
+  // Sengaja tanpa withRunchiseRetry: adjust point tidak idempoten, request
+  // yang diulang bisa menambah/mengurangi poin dua kali
+  await adjustCustomerPoint(customer.runchise_id, point, type, notes);
+
+  // Poin di Runchise sudah berubah. Gagal sinkron lokal tidak boleh membuat
+  // request dianggap gagal (lalu diulang admin); worker harian akan
+  // menyelaraskannya.
+  try {
+    const latest = await fetchRunchisePoint(customer);
+    const delta = type === "add" ? point : -point;
+
+    const updated = await prisma.customer.update({
+      where: { customer_id },
+      data: latest
+        ? { ...latest, runchise_synced_at: new Date() }
+        : {
+            available_point: { increment: delta },
+            ...(type === "add" ? { total_point: { increment: delta } } : {}),
+          },
+    });
+
+    await updateCustomerPointHistory(customer_id);
+
+    return { customer: updated, synced: true };
+  } catch (error) {
+    console.error(
+      `[adjust-point] poin customer ${customer_id} sudah diubah di Runchise, tapi sinkron lokal gagal:`,
+      error,
+    );
+    return { customer, synced: false };
+  }
+}
+
 function optionalDate(value) {
   if (!value) return undefined;
   const date = new Date(value);
@@ -700,6 +776,51 @@ async function generateAllCustomerRunchise() {
   }
 }
 
+async function syncronizeCustomerRunchise(customer_id) {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { customer_id: customer_id },
+    });
+
+    if (!customer) throw new Error("Customer not found");
+
+    if (!customer.runchise_id) {
+      throw new Error(
+        "Customer belum terhubung ke Runchise, tidak bisa update",
+      );
+    }
+
+    // Get data runchise
+    const syncronized = await getDetailCustomerById(
+      customer.runchise_id,
+      customer.runchise_location_id,
+    );
+
+    const updated = await prisma.customer.update({
+      where: { customer_id: customer.customer_id },
+      data: {
+        name: syncronized.name,
+        address: syncronized.address,
+        province: syncronized.province,
+        city: syncronized.city,
+        country: syncronized.country,
+        postal_code: syncronized.postal_code,
+        dob: optionalDate(syncronized.dob) ?? null,
+        gender: syncronized.gender,
+        status: syncronized.status,
+        available_point: syncronized.available_point,
+        total_point: syncronized.total_point,
+        balance: syncronized.balance,
+        runchise_synced_at: new Date(),
+      },
+    });
+
+    return updated;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 module.exports = {
   listAllCustomers,
   getCustomerById,
@@ -709,5 +830,7 @@ module.exports = {
   updateAllCustomerPointHistory,
   listCustomerPointHistory,
   changeStatusCustomer,
+  adjustPointCustomer,
   generateAllCustomerRunchise,
+  syncronizeCustomerRunchise,
 };

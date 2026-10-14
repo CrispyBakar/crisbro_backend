@@ -10,6 +10,7 @@
     "db:erd": "prisma generate --generator erd",
     "worker:customer-sync": "node src/jobs/customer-sync/worker.js",
     "worker:product-sync": "node src/jobs/product-sync/worker.js",
+    "worker:push": "node src/jobs/push/worker.js",
     "queue:reset": "node scripts/reset-queue.js",
     "db:migrate": "bash scripts/db-migrate.sh",
     "db:unlock": "node scripts/db-unlock.mjs"
@@ -37,6 +38,7 @@
     "prisma": "^6.19.3",
     "serverless-http": "^3.2.0",
     "swagger-ui-express": "^5.0.1",
+    "web-push": "^3.6.7",
     "yamljs": "^0.3.0",
     "zod": "^3.25.76"
   },

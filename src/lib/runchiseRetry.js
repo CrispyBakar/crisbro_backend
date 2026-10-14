@@ -2,7 +2,7 @@
 // (jaringan/timeout, 429, 5xx).
 const axios = require("axios");
 
-const RUNCHISE_MAX_RETRIES = 3;
+const RUNCHISE_MAX_RETRIES = 5;
 const RUNCHISE_RETRY_BASE_DELAY_MS = 1_000;
 const RUNCHISE_RETRY_MAX_DELAY_MS = 30_000;
 

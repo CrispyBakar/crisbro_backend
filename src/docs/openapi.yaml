@@ -34,6 +34,7 @@ tags:
   - name: Dashboard
   - name: Redeem Transactions
   - name: Customer Acquisitions
+  - name: Push Notifications
 
 paths:
   /:
@@ -421,6 +422,87 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /api/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Minta tautan reset password
+      description: >-
+        Publik. Mengirim tautan reset password ke email bila terdaftar.
+        Jawaban selalu sama untuk email terdaftar maupun tidak agar tidak bisa
+        dipakai menebak email. Token berlaku 60 menit (bisa diubah lewat
+        `RESET_PASSWORD_TTL_MINUTES`). Rate limit: 10 permintaan/IP/2 menit
+        dan 3 permintaan/email/2 menit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: customer@example.com
+      responses:
+        "200":
+          description: Permintaan diterima (tanpa membocorkan apakah email terdaftar)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+        "400":
+          description: Format email tidak valid (`success:false` + `errors`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/reset-password:
+    post:
+      tags: [Auth]
+      summary: Setel password baru dengan token reset
+      description: >-
+        Publik. Token berasal dari tautan di email forgot password dan hanya
+        bisa dipakai sekali. Setelah berhasil, semua sesi user dicabut dan
+        cookie sesi dihapus, sehingga user harus login ulang.
+        Rate limit: 10 permintaan/IP/2 menit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                  maxLength: 200
+                new_password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  description: Minimal 8 karakter, mengandung huruf besar dan angka
+      responses:
+        "200":
+          description: Password direset; login ulang diperlukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+        "400":
+          description: >-
+            Validasi gagal (`success:false` + `errors`) atau token tidak valid,
+            sudah dipakai, atau kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /api/customers:
     get:
       tags: [Customers]
@@ -715,6 +797,115 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           description: Body tidak valid atau customer belum terhubung ke Runchise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/customers/{customer_id}/sync:
+    post:
+      tags: [Customers]
+      summary: Sinkronkan satu customer dari Runchise
+      description: >-
+        Mengambil detail terbaru customer dari Runchise lalu menimpa data
+        lokal: nama, alamat, provinsi, kota, negara, kode pos, email, tanggal
+        lahir, gender, status, poin (available & total), dan saldo.
+        `runchise_synced_at` diisi waktu sinkron. Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: Customer disinkronkan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Customer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: customer_id bukan UUID atau customer belum terhubung ke Runchise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Gagal mengambil detail customer dari Runchise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/customers/{customer_id}/adjust-point:
+    post:
+      tags: [Customers]
+      summary: Tambah atau kurangi poin customer
+      description: >-
+        Mengubah poin customer di Runchise, lalu menyelaraskan saldo dan
+        riwayat poin di database lokal. Pengurangan dicek terhadap saldo
+        terbaru di Runchise. Request ke Runchise tidak di-retry karena tidak
+        idempoten. Bila `synced` bernilai false, poin sudah berubah di
+        Runchise tapi saldo lokal belum; jangan ulangi request. Khusus admin
+        dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CustomerIdPath"
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerAdjustPointRequest"
+      responses:
+        "200":
+          description: Poin customer diubah
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          customer:
+                            $ref: "#/components/schemas/Customer"
+                          synced:
+                            type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: >-
+            Body tidak valid, customer belum terhubung ke Runchise, poin tidak
+            mencukupi, atau ditolak Runchise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: >-
+            Runchise timeout/5xx; adjust mungkin sudah terjadi, cek riwayat
+            poin sebelum mencoba lagi
           content:
             application/json:
               schema:
@@ -1703,7 +1894,9 @@ paths:
       summary: Validasi referral pending milik seorang user
       description: >-
         User target dipilih eksplisit oleh admin/marketing; pelaku request
-        bukan pemilik referral yang divalidasi.
+        bukan pemilik referral yang divalidasi. Setelah berhasil, push
+        notification dikirim ke referrer dan referred yang mendapat poin;
+        kegagalan push tidak memengaruhi response.
       security:
         - bearerAuth: []
         - cookieAuth: []
@@ -2742,6 +2935,231 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/push/vapid-public-key:
+    get:
+      tags: [Push Notifications]
+      summary: Ambil VAPID public key
+      description: >-
+        Publik. Dipakai browser sebagai `applicationServerKey` saat
+        `pushManager.subscribe()`.
+      responses:
+        "200":
+          description: VAPID public key
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          public_key:
+                            type: string
+        "503":
+          description: Push notification belum dikonfigurasi di server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/push/subscribe:
+    post:
+      tags: [Push Notifications]
+      summary: Daftarkan push subscription perangkat
+      description: >-
+        Menyimpan hasil `PushSubscription.toJSON()` dari browser untuk user
+        yang login. Endpoint yang sama di-upsert, jadi aman dipanggil ulang.
+        Customer menerima info poin/promo; admin dan marketing menerima
+        notifikasi operasional (mis. referral baru yang perlu divalidasi).
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscriptionRequest"
+      responses:
+        "201":
+          description: Subscription disimpan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          push_subscription_id:
+                            type: string
+                            format: uuid
+                          created_at:
+                            type: string
+                            format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: >-
+            Body tidak valid, termasuk endpoint yang bukan milik push service
+            yang dikenal (FCM, Mozilla, Apple, Windows)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/push/unsubscribe:
+    post:
+      tags: [Push Notifications]
+      summary: Hapus push subscription perangkat
+      description: >-
+        Semua role yang login boleh memanggil. Hanya subscription milik user
+        sendiri yang dihapus.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint:
+                  type: string
+                  maxLength: 2048
+      responses:
+        "200":
+          description: Subscription dihapus
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          removed:
+                            type: integer
+                            description: Jumlah subscription yang terhapus (0 bila tidak ditemukan)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/push/test:
+    post:
+      tags: [Push Notifications]
+      summary: Kirim notifikasi tes ke perangkat sendiri
+      description: >-
+        Mengirim notifikasi tes ke semua perangkat milik user yang login.
+        Subscription yang sudah mati (404/410 dari push service) dihapus
+        otomatis.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "200":
+          description: Notifikasi tes terkirim
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PushSendSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Belum ada perangkat aktif yang menerima notifikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/push/broadcasts:
+    get:
+      tags: [Push Notifications]
+      summary: Daftar broadcast push terbaru
+      description: 20 broadcast terbaru, urut dari yang terbaru. Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Daftar broadcast
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PushBroadcast"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Push Notifications]
+      summary: Buat broadcast push ke semua customer
+      description: >-
+        Broadcast masuk antrean dengan status `pending` lalu dikirim worker
+        secara bertahap ke semua subscription milik customer. Pantau
+        `status`, `sent_count`, dan `failed_count` lewat GET
+        /api/push/broadcasts. Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushMessageRequest"
+      responses:
+        "202":
+          description: Broadcast masuk antrean
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PushBroadcast"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3440,6 +3858,124 @@ components:
           description: >-
             `active` untuk unarchive customer di Runchise, `inactive` untuk
             archive.
+
+    CustomerAdjustPointRequest:
+      type: object
+      required: [point, type]
+      additionalProperties: false
+      properties:
+        point:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+          example: 50
+        type:
+          type: string
+          enum: [add, subtract]
+        notes:
+          type: string
+          maxLength: 255
+          description: Catatan di riwayat poin Runchise
+          example: Kompensasi keluhan pesanan
+
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, keys]
+      description: Hasil `PushSubscription.toJSON()` dari browser
+      properties:
+        endpoint:
+          type: string
+          maxLength: 2048
+          description: >-
+            URL https milik push service yang dikenal (fcm.googleapis.com,
+            push.services.mozilla.com, push.apple.com, notify.windows.com)
+          example: https://fcm.googleapis.com/fcm/send/abc123
+        expirationTime:
+          type: number
+          nullable: true
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh:
+              type: string
+              maxLength: 200
+              description: Base64url
+            auth:
+              type: string
+              maxLength: 200
+              description: Base64url
+
+    PushMessageRequest:
+      type: object
+      required: [title, body]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+          example: Promo akhir pekan
+        body:
+          type: string
+          minLength: 1
+          maxLength: 300
+          example: Diskon 20% untuk semua menu sampai Minggu.
+        url:
+          type: string
+          maxLength: 500
+          default: /
+          description: Path internal yang dibuka saat notifikasi diklik, harus diawali `/`
+          example: /vouchers
+
+    PushSendSummary:
+      type: object
+      properties:
+        sent:
+          type: integer
+        expired:
+          type: integer
+          description: Subscription mati (404/410) yang sudah dihapus
+        failed:
+          type: integer
+
+    PushBroadcast:
+      type: object
+      properties:
+        push_broadcast_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        url:
+          type: string
+        status:
+          type: string
+          enum: [pending, sending, done, failed]
+        sent_count:
+          type: integer
+        failed_count:
+          type: integer
+          description: Termasuk subscription yang kedaluwarsa
+        error:
+          type: string
+          nullable: true
+        created_by_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
 
     Product:
       type: object

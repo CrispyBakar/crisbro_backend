@@ -19,6 +19,7 @@ const {
   generateSaleTransactionsFromRunchise,
 } = require("./saleTransaction.service");
 const { generateRandomUniqueCode } = require("../utils/generateReferralCode");
+const { notifyStaffSafely } = require("./push.service");
 
 const INVALID_CREDENTIALS_MESSAGE =
   "Email/nomor telepon atau password salah. Bila akun Anda belum pernah diaktivasi, hubungi Admin untuk menerima tautan aktivasi.";
@@ -381,8 +382,16 @@ async function notifyMarketingAboutReferral(userId) {
     select: { email: true },
   });
 
-  await Promise.allSettled(
-    recipients.map(({ email }) =>
+  await Promise.allSettled([
+    // Push ke admin & marketing yang mengaktifkan notifikasi di dashboard.
+    // Tag per referral supaya beberapa referral baru tidak saling menimpa.
+    notifyStaffSafely({
+      title: "Referral baru perlu validasi",
+      body: `${referral.referred.username} mendaftar dengan kode ${referral.referrer.referral_code} milik ${referral.referrer.username}.`,
+      url: "/admin/referrals",
+      tag: `referral-${referral.referral_id}`,
+    }),
+    ...recipients.map(({ email }) =>
       sendReferralValidationEmail({
         to: email,
         referrer: {
@@ -399,7 +408,7 @@ async function notifyMarketingAboutReferral(userId) {
           "https://crisbro-frontend.vercel.app",
       }),
     ),
-  );
+  ]);
 }
 
 async function verifyUserPhone({ raw_phone, noRef }) {

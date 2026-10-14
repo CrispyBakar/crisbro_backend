@@ -6,6 +6,7 @@ const { findCustomerByPhone } = require("../../services/runchise.service");
 const {
   generateSaleTransactionsFromRunchise,
 } = require("../../services/saleTransaction.service");
+const { notifyUserSafely } = require("../../services/push.service");
 
 async function customerProcessHandler(transactions) {
   const phones = [
@@ -50,6 +51,20 @@ async function customerProcessHandler(transactions) {
 
           // Update customer points history
           await updateCustomerPointHistory(customer.customer_id);
+
+          // Notifikasi poin baru: hanya customer yang punya akun aplikasi dan
+          // sudah pernah tersinkron (sinkron pertama bukan berarti poin baru)
+
+          const gained =
+            Number(data.available_point) - Number(customer.available_point);
+          if (customer.user_id && customer.runchise_synced_at && gained > 0) {
+            await notifyUserSafely(customer.user_id, {
+              title: "Point kamu bertambah! 🎉",
+              body: `${gained} poin dari transaksi terbarumu. Saldo sekarang ${data.available_point} poin.`,
+              url: "/settings/point-history",
+              tag: "point-earned",
+            });
+          }
 
           updated++;
         } catch (error) {

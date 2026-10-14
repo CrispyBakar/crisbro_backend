@@ -7,12 +7,14 @@ const {
   getCustomerByUser,
   updateCustomer,
   changeCustomerStatus,
+  adjustCustomerPoint,
   getMyCustomer,
   updateMyCustomer,
   getCustomerPointHistory,
   getMyPointHistory,
   generateCustomers,
   generateAllCustomerPoint,
+  syncCustomer,
 } = require("../controllers/customer.controller");
 
 const adminOnly = requireRole("admin");
@@ -34,6 +36,12 @@ router.get("/user/:user_id", adminOrMarketing, getCustomerByUser);
 router.get("/:customer_id", adminOrMarketing, getCustomer);
 router.patch("/:customer_id", adminOrMarketing, updateCustomer);
 router.patch("/:customer_id/status", adminOrMarketing, changeCustomerStatus);
+
+// POST /api/customers/:customer_id/sync — tarik data terbaru customer dari Runchise
+router.post("/:customer_id/sync", adminOrMarketing, syncCustomer);
+
+// POST /api/customers/:customer_id/adjust-point — body { point, type: "add" | "subtract", notes? }
+router.post("/:customer_id/adjust-point", adminOrMarketing, adjustCustomerPoint);
 router.post("/generate-point-history", adminOnly, generateAllCustomerPoint);
 router.get(
   "/:customer_id/point-history",

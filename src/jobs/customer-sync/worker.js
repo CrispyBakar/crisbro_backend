@@ -33,7 +33,13 @@ const worker = new Worker(
 
     // 2. Ambil transaksi baru dari runchise (per lokasi, berhenti di checkpoint masing-masing)
     const { sale_transactions: transactions, lastIdsByLocation: newLastIds } =
-      await getListSaleTransactionSummary(lastIdsByLocation);
+      await withRunchiseRetry(() =>
+        getListSaleTransactionSummary(lastIdsByLocation),
+      );
+
+    console.log(
+      `[customer-sync] Discover Transactions: ${transactions.length}`,
+    );
 
     if (transactions.length === 0) return { processed: 0 };
 
@@ -156,6 +162,9 @@ const workerDaily = new Worker(
         customer_id: true,
         phone_number: true,
       },
+      orderBy: {
+        created_at: "desc",
+      },
     });
 
     let updated = 0;
@@ -195,7 +204,7 @@ const workerDaily = new Worker(
 
         updated++;
         console.info(
-          "Berhasil mengupdate customer dan history point, phone: ",
+          "[customer-point-daily] Updated customer & history point: ",
           customer.phone_number,
         );
       } catch (error) {

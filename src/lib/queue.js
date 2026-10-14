@@ -4,5 +4,6 @@ const { connection } = require("./redis");
 const syncQueue = new Queue("customer-sync", { connection });
 const pointQueue = new Queue("customer-point-daily", { connection });
 const productQueue = new Queue("product-sync", { connection });
+const pushQueue = new Queue("push-broadcast", { connection });
 
-module.exports = { syncQueue, pointQueue, productQueue };
+module.exports = { syncQueue, pointQueue, productQueue, pushQueue };

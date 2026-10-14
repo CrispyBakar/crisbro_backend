@@ -690,7 +690,7 @@ async function getListPromoCodes(runchise_promo_id) {
 }
 
 const RETRYABLE_STATUS = [500, 503];
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
 // GET ke runchise, retry dengan url/params yang sama kalau server balas 500/503
 async function getWithRetry(url) {
@@ -929,7 +929,32 @@ async function adjustCustomerPoint(
 
     return true;
   } catch (error) {
-    console.log(error.response?.data);
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.errors
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      throw Object.assign(new Error(message, { cause: error }), {
+        code: "RUNCHISE_REQUEST_FAILED",
+        statusCode: 502,
+      });
+    }
+    throw error;
+  }
+}
+
+async function getDetailCustomerById(
+  runchise_customer_id,
+  runchise_location_id,
+) {
+  try {
+    const res = await runchiseClient(
+      `/locations/${runchise_location_id}/customers/${runchise_customer_id}`,
+    );
+
+    const data = res.data.customer;
+
+    return data;
+  } catch (error) {
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.errors
         ? JSON.stringify(error.response.data.errors)
@@ -944,6 +969,7 @@ async function adjustCustomerPoint(
 }
 
 module.exports = {
+  getDetailCustomerById,
   findCustomerByPhone,
   adjustCustomerPoint,
   createCustomer,
