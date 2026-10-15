@@ -107,11 +107,15 @@ async function sendToSubscriptions(rows, message) {
   return summary;
 }
 
-async function sendPushToUser(user_id, message) {
-  const rows = await prisma.pushSubscription.findMany({
+async function findUserSubscriptions(user_id) {
+  return prisma.pushSubscription.findMany({
     where: { user_id },
     select: SUBSCRIPTION_SELECT,
   });
+}
+
+async function sendPushToUser(user_id, message) {
+  const rows = await findUserSubscriptions(user_id);
   return sendToSubscriptions(rows, message);
 }
 
@@ -260,6 +264,8 @@ async function processPendingBroadcasts() {
 module.exports = {
   saveSubscription,
   removeSubscription,
+  findUserSubscriptions,
+  sendToSubscriptions,
   sendPushToUser,
   notifyUserSafely,
   notifyStaffSafely,
