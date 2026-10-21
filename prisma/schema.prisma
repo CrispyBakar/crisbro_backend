@@ -507,6 +507,30 @@ model PushBroadcast {
   @@index([status, created_at])
 }
 
+model Banner {
+  banner_id       String     @id  @default(uuid())
+  title           String
+  image_data      Bytes
+  mime_type       String
+  type            BannerType    @default(default)
+  status          BannerStatus  @default(inactive)
+  start_date      DateTime?
+  end_date        DateTime?
+  start_time      DateTime? @db.Time(0)
+  end_time        DateTime? @db.Time(0)
+  created_at      DateTime  @default(now())
+}
+
+enum BannerType {
+  default
+  temporary
+}
+
+enum BannerStatus {
+  active
+  inactive
+}
+
 enum PushBroadcastStatus {
   pending
   sending

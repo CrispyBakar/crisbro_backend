@@ -41,7 +41,11 @@ router.patch("/:customer_id/status", adminOrMarketing, changeCustomerStatus);
 router.post("/:customer_id/sync", adminOrMarketing, syncCustomer);
 
 // POST /api/customers/:customer_id/adjust-point — body { point, type: "add" | "subtract", notes? }
-router.post("/:customer_id/adjust-point", adminOrMarketing, adjustCustomerPoint);
+router.post(
+  "/:customer_id/adjust-point",
+  adminOrMarketing,
+  adjustCustomerPoint,
+);
 router.post("/generate-point-history", adminOnly, generateAllCustomerPoint);
 router.get(
   "/:customer_id/point-history",

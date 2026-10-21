@@ -35,6 +35,7 @@ tags:
   - name: Redeem Transactions
   - name: Customer Acquisitions
   - name: Push Notifications
+  - name: Banners
 
 paths:
   /:
@@ -3160,6 +3161,186 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+
+  /api/banner:
+    get:
+      tags: [Banners]
+      summary: Daftar banner
+      description: >-
+        Publik, tanpa login. Mengembalikan maksimal 3 banner, banner default
+        di urutan pertama lalu yang terbaru. Isi gambar tidak disertakan;
+        muat gambar lewat `image_url` (relatif terhadap base URL API).
+      responses:
+        "200":
+          description: Daftar banner
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        maxItems: 3
+                        items:
+                          $ref: "#/components/schemas/Banner"
+                      message:
+                        type: string
+                        example: Banner list
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/banner/{banner_id}:
+    delete:
+      tags: [Banners]
+      summary: Hapus banner
+      description: >-
+        Menghapus banner beserta gambarnya, sehingga slot upload kembali
+        tersedia (maksimal 3 banner). Gambar yang sudah ter-cache di CDN
+        masih bisa terlayani hingga 5 menit setelah dihapus. Khusus admin dan
+        marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+        - in: path
+          name: banner_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Banner berhasil dihapus
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/BannerDeleted"
+                      message:
+                        type: string
+                        example: Banner deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/banner/{banner_id}/image:
+    get:
+      tags: [Banners]
+      summary: Gambar banner
+      description: >-
+        Publik, tanpa login. Mengembalikan file gambar mentah dengan
+        Content-Type sesuai file yang diupload, sehingga bisa dipakai langsung
+        di `<img src>` dari origin lain. Di-cache CDN selama 5 menit.
+      parameters:
+        - in: path
+          name: banner_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: File gambar banner
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/banner/upload:
+    post:
+      tags: [Banners]
+      summary: Upload banner baru
+      description: >-
+        Menyimpan banner beserta file gambarnya ke database. Dikirim sebagai
+        `multipart/form-data` dengan file di field `image` (JPEG, PNG, atau
+        WebP, maksimal 2 MB). Jumlah banner maksimal 3; upload ke-4 ditolak
+        dengan 409. Respons tidak menyertakan isi gambar. Khusus admin dan
+        marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/BannerCreateRequest"
+            encoding:
+              image:
+                contentType: image/jpeg, image/png, image/webp
+      responses:
+        "201":
+          description: Banner berhasil diupload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Banner"
+                      message:
+                        type: string
+                        example: Banner uploaded
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Sudah ada 3 banner (batas maksimal)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: File gambar melebihi 2 MB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Content-Type bukan multipart/form-data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3976,6 +4157,60 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    BannerDeleted:
+      type: object
+      properties:
+        banner_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        mime_type:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    BannerCreateRequest:
+      type: object
+      required: [title, image]
+      properties:
+        title:
+          type: string
+          example: Promo Akhir Tahun
+        image:
+          type: string
+          format: binary
+          description: >-
+            File gambar banner (JPEG, PNG, atau WebP, maksimal 2 MB).
+            `mime_type` diambil dari Content-Type file ini.
+        is_default:
+          type: boolean
+          default: false
+
+    Banner:
+      type: object
+      properties:
+        banner_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        mime_type:
+          type: string
+          example: image/png
+        is_default:
+          type: boolean
+        image_url:
+          type: string
+          description: Path gambar, relatif terhadap base URL API
+          example: /api/banner/3f6c1d2e-8a4b-4c1e-9f0a-2b7d5e6a1c90/image
+        created_at:
+          type: string
+          format: date-time
 
     Product:
       type: object

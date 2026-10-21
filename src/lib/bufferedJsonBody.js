@@ -15,7 +15,14 @@ function createBufferedJsonBodyParser({ limitBytes }) {
     // Samakan dengan express.json(): tanpa body JSON, req.body undefined.
     req.body = undefined;
 
-    if (raw.length === 0 || !req.is("application/json")) return next();
+    if (raw.length === 0) return next();
+
+    // Body non-JSON (mis. upload multipart) disimpan mentah untuk parser
+    // khusus di level route (src/middleware/imageUpload.js).
+    if (!req.is("application/json")) {
+      req.rawBody = raw;
+      return next();
+    }
 
     if (raw.length > limitBytes) {
       return res.status(413).json({ message: "Request body terlalu besar" });
