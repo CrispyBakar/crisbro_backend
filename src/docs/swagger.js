@@ -1,25 +1,25 @@
-const path = require('path');
-const swaggerUi = require('swagger-ui-express');
-const YAML = require('yamljs');
+const path = require("path");
+const swaggerUi = require("swagger-ui-express");
+const YAML = require("js-yaml");
 
-const openApiSpec = YAML.load(path.join(__dirname, 'openapi.yaml'));
-const swaggerUiAssetVersion = '5.32.8';
+const openApiSpec = YAML.load(path.join(__dirname, "openapi.yaml"));
+const swaggerUiAssetVersion = "5.32.8";
 
 const swaggerUiOptions = {
   explorer: true,
-  customSiteTitle: 'Crisbar Rewards API Docs',
+  customSiteTitle: "Crisbar Rewards API Docs",
   swaggerOptions: {
     persistAuthorization: true,
     displayRequestDuration: true,
-    tagsSorter: 'alpha',
-    operationsSorter: 'method',
+    tagsSorter: "alpha",
+    operationsSorter: "method",
   },
 };
 
 function renderSwaggerHtml(nonce) {
   const swaggerOptions = swaggerUiOptions.swaggerOptions;
   // L-2: Menambahkan nonce unik pada setiap script dan style inline agar sesuai dengan kebijakan CSP dan tetap aman dijalankan.
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">

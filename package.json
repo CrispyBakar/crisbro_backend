@@ -32,23 +32,34 @@
     "express-rate-limit": "^8.6.2",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
+    "js-yaml": "^5.5.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.5.0",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.2.0",
     "p-limit": "^7.3.2",
     "pg": "^8.21.0",
-    "prisma": "^6.19.3",
     "serverless-http": "^3.2.0",
     "swagger-ui-express": "^5.0.1",
     "web-push": "^3.6.7",
-    "yamljs": "^0.3.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@mermaid-js/mermaid-cli": "^11.17.0",
+    "@mermaid-js/mermaid-cli": "^11.14.0",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
+    "jest": "^30.5.2",
     "nodemon": "^3.1.14",
+    "prisma": "^6.19.3",
     "prisma-erd-generator": "^3.2.1"
+  },
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "bcrypt@6.0.0": true,
+    "msgpackr-extract@3.0.4": true,
+    "puppeteer@25.15.0": true,
+    "@parcel/watcher@2.6.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
