@@ -6,7 +6,7 @@ const createBannerSchema = z.object({
     .trim()
     .min(1, "Title is required"),
   status: z.enum(["active", "inactive"]).default("inactive"),
-  type: z.enum(["default", "temporary"]).default("temporary"),
+  type: z.enum(["default", "campaign"]).default("campaign"),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   start_time: z.string().optional(),
