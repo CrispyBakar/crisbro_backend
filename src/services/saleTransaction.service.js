@@ -1,5 +1,6 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../lib/prisma");
+const { parseDate } = require("../utils/datetime");
 const { withDbRetry } = require("../lib/dbRetry");
 const { withRunchiseRetry } = require("../lib/runchiseRetry");
 const {
@@ -94,7 +95,7 @@ function buildSaleTransactionData(customer, location, transaction) {
     subtotal: toNullableFloat(transaction.subtotal),
     net_sales_after_tax: toNullableFloat(transaction.net_sales_after_tax),
     sales_time: transaction.sales_time
-      ? new Date(transaction.sales_time)
+      ? parseDate(transaction.sales_time)
       : null,
     note: transaction.note ?? null,
     // Kolom bertipe TEXT sejak migration 20260923074814_revisi.

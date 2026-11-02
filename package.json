@@ -6,7 +6,8 @@
   "scripts": {
     "postinstall": "prisma generate --generator client",
     "lint": "eslint src netlify",
-    "dev": "nodemon src/index.js",
+    "test": "jest --runInBand",
+    "dev": "cross-env TZ=UTC nodemon src/index.js",
     "db:erd": "prisma generate --generator erd",
     "worker:customer-sync": "node src/jobs/customer-sync/worker.js",
     "worker:product-sync": "node src/jobs/product-sync/worker.js",
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.14.0",
+    "cross-env": "^10.1.0",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
     "jest": "^30.5.2",

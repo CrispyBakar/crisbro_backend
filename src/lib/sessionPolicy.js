@@ -11,6 +11,7 @@ const DEFAULT_RENEW_INTERVAL_MINUTES = 5;
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
+const { parseDate } = require("../utils/datetime");
 
 function positiveNumberEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -97,7 +98,7 @@ function computeSlidingSessionExpiry({
   const current =
     currentExpiresAt instanceof Date
       ? currentExpiresAt.getTime()
-      : new Date(currentExpiresAt).getTime();
+      : (parseDate(currentExpiresAt)?.getTime() ?? Number.NaN);
 
   // Token tanpa klaim `exp` yang sah tidak punya batas absolut yang bisa
   // dipakai sebagai plafon; jangan tulis apa pun daripada menyimpan tanggal

@@ -1,5 +1,6 @@
 const prisma = require("../lib/prisma");
 const { Prisma } = require("@prisma/client");
+const { parseDate, parseTime } = require("../utils/datetime");
 
 class BannerError extends Error {
   constructor(statusCode, code, message) {
@@ -29,35 +30,16 @@ function withImageUrl(banner) {
   return { ...banner, image_url: `/api/banner/${banner.banner_id}/image` };
 }
 
-function parseDate(value) {
-  if (!value) return null;
-  // "YYYY-MM-DD" → tentukan zona secara eksplisit
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date(`${value}T00:00:00.000+07:00`); // atau Z kalau mau UTC murni
-  }
-  return new Date(value); // string ISO lengkap dengan Z / offset
-}
-
 async function uploadBannerService(data) {
   const banner = await prisma.$transaction(async (tx) => {
     // Lock per transaksi supaya dua upload bersamaan tidak sama-sama lolos
     // pengecekan jumlah lalu membuat banner ke-4.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('banner_create'))`;
 
-    const start_date =
-      data.start_date !== "" ? parseDate(data.start_date).toISOString() : null;
-    const end_date =
-      data.end_date !== "" ? parseDate(data.end_date).toISOString() : null;
-
-    const toTimeOrNull = (t) => {
-      if (!t) return null; // "", null, undefined
-      const hhmmss = t.length === 5 ? `${t}:00` : t; // "08:00" -> "08:00:00"
-      const d = new Date(`1970-01-01T${hhmmss}.000Z`);
-      return isNaN(d.getTime()) ? null : d;
-    };
-
-    const start_time = toTimeOrNull(data.start_time);
-    const end_time = toTimeOrNull(data.end_time);
+    const start_date = parseDate(data.start_date);
+    const end_date = parseDate(data.end_date);
+    const start_time = parseTime(data.start_time);
+    const end_time = parseTime(data.end_time);
 
     return tx.banner.create({
       data: {
@@ -66,10 +48,10 @@ async function uploadBannerService(data) {
         mime_type: data.image.mime_type,
         status: data.status,
         type: data.type,
-        start_date: start_date,
-        end_date: end_date,
-        start_time: start_time,
-        end_time: end_time,
+        start_date,
+        end_date,
+        start_time,
+        end_time,
         redirect_type: data.redirect_type,
         url: data.url,
       },
@@ -95,14 +77,7 @@ async function editBannerService(bannerId, data) {
 
   for (const field of ["start_time", "end_time"]) {
     if (data[field] !== undefined) {
-      const time = data[field];
-      if (!time) {
-        updateData[field] = null;
-      } else {
-        const hhmmss = time.length === 5 ? `${time}:00` : time;
-        const parsedTime = new Date(`1970-01-01T${hhmmss}.000Z`);
-        updateData[field] = isNaN(parsedTime.getTime()) ? null : parsedTime;
-      }
+      updateData[field] = parseTime(data[field]);
     }
   }
 

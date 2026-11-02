@@ -18,6 +18,7 @@ const {
 } = require("../../services/customer.service");
 const { customerProcessHandler } = require("./customerProcess");
 const { withRunchiseRetry } = require("../../lib/runchiseRetry");
+const { parseDate } = require("../../utils/datetime");
 
 const worker = new Worker(
   "customer-sync",
@@ -91,10 +92,10 @@ const worker = new Worker(
                     // belum dinonaktifkan; new Date(null) akan tersimpan
                     // sebagai 1 Januari 1970.
                     last_usage: promoCode.last_usage
-                      ? new Date(promoCode.last_usage)
+                      ? parseDate(promoCode.last_usage)
                       : null,
                     deactivate_at: promoCode.deactivate_at
-                      ? new Date(promoCode.deactivate_at)
+                      ? parseDate(promoCode.deactivate_at)
                       : null,
                     deactivate_reason: promoCode.deactivate_reason,
                   },

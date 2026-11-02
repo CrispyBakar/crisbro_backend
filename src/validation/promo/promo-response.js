@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { parseDate } = require("../../utils/datetime");
 
 const integer = z.union([z.number(), z.string().regex(/^\d+$/)])
   .pipe(z.coerce.number().int().min(0).max(2147483647));
@@ -20,13 +21,13 @@ const remoteDate = z.string().transform((value, ctx) => {
     return z.NEVER;
   };
   if (!parts) return invalid();
-  const [year, month, day] = parts.map(Number);
-  const dateOnly = `${parts[0]}-${parts[1]}-${parts[2]}`;
-  const calendar = new Date(`${dateOnly}T00:00:00.000Z`);
-  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() + 1 !== month || calendar.getUTCDate() !== day) return invalid();
   if (!dmy && value.includes("T") && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return invalid();
-  const date = !dmy && value.includes("T") ? new Date(value) : calendar;
-  return Number.isNaN(date.getTime()) ? invalid() : date;
+  const dateOnly = `${parts[0]}-${parts[1]}-${parts[2]}`;
+  const date = parseDate(
+    !dmy && value.includes("T") ? value : dateOnly,
+    { dateOnlyAsUTC: true },
+  );
+  return date ?? invalid();
 }).nullish();
 
 const objectArray = z.array(z.object({}).passthrough()).nullable().transform((value) => value ?? []);

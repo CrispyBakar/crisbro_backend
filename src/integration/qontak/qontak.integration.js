@@ -7,13 +7,6 @@ const base_url = process.env.QONTAK_BASE_URL;
 const client_id = process.env.QONTAK_CLIENT_ID;
 const client_secret = process.env.QONTAK_CLIENT_SECRET;
 
-const WIB_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7
-
-// Hasilkan Date yang kalau disimpan ke DB, nilainya = jam WIB
-function toStoredWIB(date) {
-  return new Date(date.getTime() + WIB_OFFSET_MS);
-}
-
 async function getTokenFromDB() {
   try {
     let token = await prisma.token.findFirst({
@@ -22,10 +15,7 @@ async function getTokenFromDB() {
 
     if (!token) throw new Error("Qontak Access Token doesn't exist");
 
-    // now dibandingkan dalam "basis WIB" juga, biar konsisten sama expires_at yang disimpan
-    const nowWIB = toStoredWIB(new Date());
-
-    if (token.expires_at < nowWIB) {
+    if (token.expires_at < new Date()) {
       await generateToken({ refresh_token: token.refresh_token });
 
       token = await prisma.token.findFirst({
@@ -53,14 +43,13 @@ async function generateToken({ refresh_token }) {
     const data = response.data;
 
     const realExpiresAt = new Date(Date.now() + data.expires_in * 1000);
-    const expiresAtWIB = toStoredWIB(realExpiresAt);
 
     return prisma.token.update({
       where: { token_code: "qontak" },
       data: {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
-        expires_at: expiresAtWIB,
+        expires_at: realExpiresAt,
       },
     });
   } catch (error) {

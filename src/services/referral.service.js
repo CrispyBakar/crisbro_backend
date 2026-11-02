@@ -6,6 +6,7 @@ const {
   adjustCustomerPoint,
 } = require("./runchise.service");
 const { normalizePhone } = require("../lib/phoneNumber");
+const { parseDate } = require("../utils/datetime");
 
 function optionalInteger(value) {
   const number = Number(value);
@@ -14,8 +15,7 @@ function optionalInteger(value) {
 
 function optionalDate(value) {
   if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  return parseDate(value, { dateOnlyAsUTC: true }) ?? undefined;
 }
 
 function pointBalance(remoteValue, localValue, awardedPoints) {
@@ -56,8 +56,8 @@ function buildCustomerUpdateFromRunchise(
       localCustomer.available_point,
       awardedPoints,
     ),
-    created_at: new Date(remoteCustomer.created_at ?? Date.now()),
-    updated_at: new Date(remoteCustomer.updated_at),
+    created_at: parseDate(remoteCustomer.created_at ?? Date.now()),
+    updated_at: parseDate(remoteCustomer.updated_at),
   };
 }
 

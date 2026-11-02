@@ -15,14 +15,7 @@
 const WIB_OFFSET_MINUTES = 7 * 60;
 const WIB_OFFSET_MS = WIB_OFFSET_MINUTES * 60 * 1000;
 const WIB_OFFSET_SUFFIX = '+07:00';
-
-// 'YYYY-MM-DD' — bentuk yang dikirim <input type="date">.
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-// 'YYYY-MM-DDTHH:mm[:ss[.sss]]' TANPA offset. ECMAScript menafsirkan bentuk ini
-// sebagai waktu LOKAL runtime (berbeda dari bentuk date-only yang ditafsirkan
-// sebagai UTC), jadi bentuk inilah yang paling berbahaya bila dibiarkan.
-const NAIVE_DATE_TIME_PATTERN =
-  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/;
+const { parseDate } = require("../utils/datetime");
 
 /**
  * Mengubah nilai apa pun menjadi satu instant (Date) tanpa bergantung pada zona
@@ -37,28 +30,7 @@ const NAIVE_DATE_TIME_PATTERN =
  * Mengembalikan `null` bila nilai tidak dapat diurai.
  */
 function parseWibInstant(value) {
-  if (value === undefined || value === null || value === '') return null;
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
-  }
-
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? new Date(value) : null;
-  }
-
-  const raw = String(value).trim();
-  if (!raw) return null;
-
-  let normalized = raw;
-  if (DATE_ONLY_PATTERN.test(raw)) {
-    normalized = `${raw}T00:00:00.000${WIB_OFFSET_SUFFIX}`;
-  } else if (NAIVE_DATE_TIME_PATTERN.test(raw)) {
-    normalized = `${raw.replace(' ', 'T')}${WIB_OFFSET_SUFFIX}`;
-  }
-
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseDate(value);
 }
 
 // Komponen kalender WIB dari sebuah instant. Digeser dulu lalu dibaca dengan
@@ -101,7 +73,7 @@ function endOfWibDay(date) {
  * Penjadwalan yang menyebut jam eksplisit tidak boleh dijepit ke batas hari.
  */
 function isWibDateOnlyInput(value) {
-  return typeof value === 'string' && DATE_ONLY_PATTERN.test(value.trim());
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 
 /** Label tanggal kalender WIB ('YYYY-MM-DD') dari sebuah instant. */

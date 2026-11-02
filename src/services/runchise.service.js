@@ -714,12 +714,17 @@ async function getWithRetry(url) {
 
 async function getListSaleTransactionSummary(lastIdsByLocation = {}) {
   const location_ids = await findAllLocationIds();
-  const date = new Date();
-  const now = date.toISOString().split("T")[0];
-
-  const yesterday = new Date(date);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const start_date = yesterday.toISOString().split("T")[0];
+  const current = new Date();
+  const date = new Date(
+    Date.UTC(
+      current.getUTCFullYear(),
+      current.getUTCMonth(),
+      current.getUTCDate(),
+    ),
+  );
+  const now = date.toISOString().slice(0, 10);
+  date.setUTCDate(date.getUTCDate() - 1);
+  const start_date = date.toISOString().slice(0, 10);
 
   const sale_transactions = [];
   const updatedLastIds = { ...lastIdsByLocation };

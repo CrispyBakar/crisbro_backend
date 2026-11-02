@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const { parseDate } = require("../utils/datetime");
 const { hashSessionToken } = require("../lib/sessionToken");
 const {
   computeSessionExpiry,
@@ -24,7 +25,7 @@ async function createSession({
   // Tidak ada cron di serverless; login jadi titik bersih-bersih sesi
   // kedaluwarsa milik user yang sama supaya tabel tidak terus tumbuh.
   await prisma.session.deleteMany({
-    where: { user_id: userId, expires_at: { lte: new Date(now) } },
+    where: { user_id: userId, expires_at: { lte: parseDate(now) } },
   });
 
   return prisma.session.create({

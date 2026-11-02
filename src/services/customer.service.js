@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const { parseDate } = require("../utils/datetime");
 const { normalizePhone, phoneVariants } = require("../lib/phoneNumber");
 const { withDbRetry } = require("../lib/dbRetry");
 const { withRunchiseRetry } = require("../lib/runchiseRetry");
@@ -80,7 +81,7 @@ function pickAllowedFields(payload = {}, allowedFields) {
 // Membandingkan dua tanggal yang boleh kosong (null/undefined dianggap sama)
 function isSameDate(a, b) {
   if (!a || !b) return !a && !b;
-  return new Date(a).getTime() === new Date(b).getTime();
+  return parseDate(a)?.getTime() === parseDate(b)?.getTime();
 }
 
 async function listAllCustomers(query = {}) {
@@ -108,8 +109,8 @@ async function listAllCustomers(query = {}) {
 
   if (start_date || end_date) {
     where.created_at = {};
-    if (start_date) where.created_at.gt = new Date(start_date);
-    if (end_date) where.created_at.lt = new Date(end_date);
+    if (start_date) where.created_at.gt = parseDate(start_date);
+    if (end_date) where.created_at.lt = parseDate(end_date);
   }
 
   try {
@@ -388,14 +389,14 @@ async function updateCustomerPointHistory(customer_id) {
         location_id: history.location_id,
         sales_no: history.sales_no != null ? String(history.sales_no) : null,
         expired_point: history.expired_point,
-        expired_at: history.expired_at ? new Date(history.expired_at) : null,
+        expired_at: history.expired_at ? parseDate(history.expired_at) : null,
         customer_expired_point_id: history.customer_expired_point_id,
         customer_order_uuid: history.customer_order_uuid,
         formatted_created_at: history.formatted_created_at
-          ? new Date(history.formatted_created_at)
+          ? parseDate(history.formatted_created_at)
           : null,
         issued_at_time: history.issued_at_time
-          ? new Date(history.issued_at_time)
+          ? parseDate(history.issued_at_time)
           : null,
         point_type_description: history.point_type_description,
         channel: history.channel,
@@ -607,8 +608,7 @@ async function adjustPointCustomer(customer_id, { point, type, notes }) {
 
 function optionalDate(value) {
   if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  return parseDate(value, { dateOnlyAsUTC: true }) ?? undefined;
 }
 
 async function generateAllCustomerRunchise() {
@@ -703,8 +703,8 @@ async function generateAllCustomerRunchise() {
           total_point: customer.total_point ?? 0,
           available_point: customer.available_point ?? 0,
           runchise_synced_at: new Date(),
-          created_at: new Date(customer.created_at ?? Date.now()),
-          updated_at: new Date(customer.updated_at),
+          created_at: parseDate(customer.created_at ?? Date.now()),
+          updated_at: parseDate(customer.updated_at),
           // Nomor telepon hanya dioverwrite ketika Runchise mengirimkannya agar
           // customer yang terhubung user tidak kehilangan nomor lokalnya
           ...(customer.phone_number

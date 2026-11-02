@@ -23,7 +23,7 @@ async function registeredCustomerSyncPointHistory() {
 
   return pointQueue.upsertJobScheduler(
     "customer-sync-daily",
-    { pattern: "0 1 * * *" },
+    { pattern: "0 18 * * *", tz: "UTC" }, // 01:00 WIB on the following day
     {
       name: "customer-point-daily",
       data: {},

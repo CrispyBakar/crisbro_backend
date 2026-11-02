@@ -15,6 +15,7 @@ const {
   getDefaultExpiresTime,
 } = require("../constants/referralCodeValue");
 const { notifyUserSafely } = require("../services/push.service");
+const { parseDate } = require("../utils/datetime");
 
 const userIdSchema = z.string().uuid("User ID must be a valid UUID");
 const listReferralUsagesQuerySchema = z.object({
@@ -43,7 +44,7 @@ async function generateReferralCodeController(req, res) {
     payload = {
       ...body,
       owner_referral: user_id,
-      expires_at: new Date(body.expires_at),
+      expires_at: parseDate(body.expires_at),
     };
   }
 
@@ -82,7 +83,7 @@ async function renewReferralCodeController(req, res) {
     ...body,
     owner_referral: user_id,
     expires_at: body.expires_at
-      ? new Date(body.expires_at)
+      ? parseDate(body.expires_at)
       : getDefaultExpiresTime(),
     point_reward: body.point_reward ?? DEFAULT_POINT_REWARD,
     point_given: body.point_given ?? DEFAULT_POINT_GIVEN,

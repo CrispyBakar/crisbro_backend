@@ -1,10 +1,10 @@
 const { productQueue } = require("../../lib/queue");
 
 async function registerProductSyncScheduler() {
-  // Jam 02:00 (zona waktu server), setelah job customer-point-daily jam 01:00
+  // 02:00 WIB (19:00 UTC hari sebelumnya), setelah customer-point-daily.
   return productQueue.upsertJobScheduler(
     "product-sync-daily",
-    { pattern: "0 2 * * *" },
+    { pattern: "0 19 * * *", tz: "UTC" },
     {
       name: "product-sync",
       data: {},

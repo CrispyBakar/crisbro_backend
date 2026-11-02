@@ -20,6 +20,7 @@ const {
 } = require("./saleTransaction.service");
 const { generateRandomUniqueCode } = require("../utils/generateReferralCode");
 const { notifyStaffSafely } = require("./push.service");
+const { parseDate } = require("../utils/datetime");
 
 const INVALID_CREDENTIALS_MESSAGE =
   "Email/nomor telepon atau password salah. Bila akun Anda belum pernah diaktivasi, hubungi Admin untuk menerima tautan aktivasi.";
@@ -78,8 +79,8 @@ function buildLocalCustomerData(
     normalized_phone_number: normalizePhone(phoneNumber),
     total_point: remoteCustomer.total_point ?? 0,
     available_point: remoteCustomer.available_point ?? 0,
-    created_at: new Date(remoteCustomer.created_at ?? Date.now()),
-    updated_at: new Date(remoteCustomer.updated_at),
+    created_at: parseDate(remoteCustomer.created_at ?? Date.now()),
+    updated_at: parseDate(remoteCustomer.updated_at),
     status: status,
   };
 }

@@ -224,7 +224,7 @@ async function redeemLoyaltyVoucher(user_id, loyalty_product_id) {
         }
 
         const endDate = product.promo?.end_date
-          ? new Date(product.promo.end_date)
+          ? product.promo.end_date
           : null;
 
         if (endDate && new Date() > endDate) {

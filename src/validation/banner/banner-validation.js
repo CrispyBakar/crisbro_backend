@@ -1,4 +1,18 @@
 const { z } = require("zod");
+const { parseDate, parseTime } = require("../../utils/datetime");
+
+const optionalDate = z
+  .string()
+  .optional()
+  .refine((value) => value === undefined || value === "" || parseDate(value), {
+    message: "Tanggal tidak valid",
+  });
+const optionalTime = z
+  .string()
+  .optional()
+  .refine((value) => value === undefined || value === "" || parseTime(value), {
+    message: "Waktu tidak valid; gunakan HH:mm atau HH:mm:ss",
+  });
 
 const createBannerSchema = z.object({
   title: z
@@ -7,10 +21,10 @@ const createBannerSchema = z.object({
     .min(1, "Title is required"),
   status: z.enum(["active", "inactive"]).default("inactive"),
   type: z.enum(["default", "campaign"]).default("campaign"),
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-  start_time: z.string().optional(),
-  end_time: z.string().optional(),
+  start_date: optionalDate,
+  end_date: optionalDate,
+  start_time: optionalTime,
+  end_time: optionalTime,
   redirect_type: z
     .enum(["disable", "internal", "external", "orderulang"])
     .default("disable"),

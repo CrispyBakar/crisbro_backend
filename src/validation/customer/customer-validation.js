@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { parseDate } = require("../../utils/datetime");
 
 const updateCustomerSchema = z.object({
   name: z.string().trim().min(1).optional(),
@@ -14,7 +15,14 @@ const updateCustomerSchema = z.object({
   last_updated_by_id: z.string().uuid().optional(),
   owner_location_id: z.string().optional(),
   // Date-only ("YYYY-MM-DD") dari form; null menghapus tanggal lahir
-  dob: z.coerce.date().optional().nullable(),
+  dob: z
+    .preprocess(
+      (value) =>
+        value === undefined || value === null
+          ? value
+          : (parseDate(value, { dateOnlyAsUTC: true }) ?? value),
+      z.date().optional().nullable(),
+    ),
 }).strict();
 
 const deactivateCustomerSchema = z.object({
