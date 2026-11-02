@@ -8,6 +8,7 @@ const {
   sendTestController,
   createBroadcastController,
   listBroadcastsController,
+  listUserBroadcastController,
 } = require("../controllers/push.controller");
 
 // Public key VAPID memang publik; dipakai browser saat subscribe
@@ -42,6 +43,14 @@ router.post(
   auth,
   requireRole("admin", "marketing"),
   createBroadcastController,
+);
+
+// List broadcast yang diterima user subscribed
+router.get(
+  "/user/broadcasts",
+  auth,
+  requireRole("customer"),
+  listUserBroadcastController,
 );
 
 module.exports = router;

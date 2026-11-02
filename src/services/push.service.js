@@ -261,6 +261,29 @@ async function processPendingBroadcasts() {
   return { processed };
 }
 
+async function getBroadCastNotifForUser(user_id) {
+  try {
+    const subscriptions = await findUserSubscriptions(user_id);
+
+    if (subscriptions.length === 0) {
+      throw new Error(`Tidak ada subscription`);
+    }
+
+    const broadcasts = await prisma.pushBroadcast.findMany({
+      where: {
+        status: "done",
+      },
+      orderBy: { created_at: "desc" },
+      take: 10,
+    });
+    return broadcasts;
+  } catch (error) {
+    throw new Error(
+      `Gagal mengambil notifikasi broadcast untuk user ${user_id}: ${error.message}`,
+    );
+  }
+}
+
 module.exports = {
   saveSubscription,
   removeSubscription,
@@ -272,5 +295,6 @@ module.exports = {
   createBroadcast,
   listBroadcasts,
   processPendingBroadcasts,
+  getBroadCastNotifForUser,
   BROADCAST_BATCH_SIZE,
 };

@@ -29,6 +29,15 @@ function withImageUrl(banner) {
   return { ...banner, image_url: `/api/banner/${banner.banner_id}/image` };
 }
 
+function parseDate(value) {
+  if (!value) return null;
+  // "YYYY-MM-DD" → tentukan zona secara eksplisit
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00.000+07:00`); // atau Z kalau mau UTC murni
+  }
+  return new Date(value); // string ISO lengkap dengan Z / offset
+}
+
 async function uploadBannerService(data) {
   const banner = await prisma.$transaction(async (tx) => {
     // Lock per transaksi supaya dua upload bersamaan tidak sama-sama lolos
@@ -36,9 +45,9 @@ async function uploadBannerService(data) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('banner_create'))`;
 
     const start_date =
-      data.start_date !== "" ? new Date(data.start_date).toISOString() : null;
+      data.start_date !== "" ? parseDate(data.start_date).toISOString() : null;
     const end_date =
-      data.end_date !== "" ? new Date(data.end_date).toISOString() : null;
+      data.end_date !== "" ? parseDate(data.end_date).toISOString() : null;
 
     const toTimeOrNull = (t) => {
       if (!t) return null; // "", null, undefined
@@ -80,9 +89,7 @@ async function editBannerService(bannerId, data) {
 
   for (const field of ["start_date", "end_date"]) {
     if (data[field] !== undefined) {
-      updateData[field] = data[field]
-        ? new Date(data[field]).toISOString()
-        : null;
+      updateData[field] = parseDate(data[field])?.toISOString() ?? null;
     }
   }
 
@@ -163,25 +170,19 @@ async function deleteBannerService(bannerId) {
 }
 
 async function clickBannerService({ bannerId, userId, userAgent, ipAddress }) {
-  try {
-    const insertClickedBanner = await prisma.bannerClicked.create({
-      data: {
-        banner_id: bannerId,
-        user_id: userId,
-        user_agent: userAgent,
-        ip_address: ipAddress,
-      },
-      select: {
-        banner_id: true,
-        user_id: true,
-        user_agent: true,
-      },
-    });
-
-    return insertClickedBanner;
-  } catch (error) {
-    throw error;
-  }
+  return prisma.bannerClicked.create({
+    data: {
+      banner_id: bannerId,
+      user_id: userId,
+      user_agent: userAgent,
+      ip_address: ipAddress,
+    },
+    select: {
+      banner_id: true,
+      user_id: true,
+      user_agent: true,
+    },
+  });
 }
 
 module.exports = {

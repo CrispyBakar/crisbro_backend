@@ -11,6 +11,7 @@ const {
   sendPushToUser,
   createBroadcast,
   listBroadcasts,
+  getBroadCastNotifForUser,
 } = require("../services/push.service");
 
 function getVapidPublicKeyController(req, res) {
@@ -130,6 +131,21 @@ async function listBroadcastsController(req, res) {
   return successRequest({ res, data });
 }
 
+async function listUserBroadcastController(req, res) {
+  const user_id = req.user?.user_id;
+
+  if (!user_id) {
+    return badRequest({
+      res,
+      code: 401,
+      error: "Unauthorized",
+    });
+  }
+
+  const data = await getBroadCastNotifForUser(user_id);
+  return successRequest({ res, data });
+}
+
 module.exports = {
   getVapidPublicKeyController,
   subscribeController,
@@ -137,4 +153,5 @@ module.exports = {
   sendTestController,
   createBroadcastController,
   listBroadcastsController,
+  listUserBroadcastController,
 };
