@@ -1,0 +1,1 @@
+ALTER TYPE "RedirectType" ADD VALUE IF NOT EXISTS 'disable';

@@ -1,0 +1,1 @@
+ALTER TABLE "Banner" ALTER COLUMN "redirect_type" SET DEFAULT 'disable';

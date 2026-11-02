@@ -96,6 +96,15 @@ const auth = async (req, res, next) => {
   return next();
 };
 
+// For Click Banner
+const guestOrAuthenticate = async (req, res, next) => {
+  const cookieToken = getSessionCookie(req);
+
+  if (!cookieToken) return next();
+
+  return auth(req, res, next);
+};
+
 const requireValidPhone = async (req, res, next) => {
   const user_id = req.user.user_id ?? undefined;
 
@@ -138,4 +147,4 @@ const requireRole = (...allowedRoles) => {
   };
 };
 
-module.exports = { auth, requireValidPhone, requireRole };
+module.exports = { auth, requireValidPhone, requireRole, guestOrAuthenticate };

@@ -20,6 +20,8 @@ const bannerSelect = {
   end_date: true,
   start_time: true,
   end_time: true,
+  redirect_type: true,
+  url: true,
   created_at: true,
 };
 
@@ -59,12 +61,66 @@ async function uploadBannerService(data) {
         end_date: end_date,
         start_time: start_time,
         end_time: end_time,
+        redirect_type: data.redirect_type,
+        url: data.url,
       },
       select: bannerSelect,
     });
   });
 
   return withImageUrl(banner);
+}
+
+async function editBannerService(bannerId, data) {
+  const updateData = {};
+
+  for (const field of ["title", "status", "type", "redirect_type", "url"]) {
+    if (data[field] !== undefined) updateData[field] = data[field];
+  }
+
+  for (const field of ["start_date", "end_date"]) {
+    if (data[field] !== undefined) {
+      updateData[field] = data[field]
+        ? new Date(data[field]).toISOString()
+        : null;
+    }
+  }
+
+  for (const field of ["start_time", "end_time"]) {
+    if (data[field] !== undefined) {
+      const time = data[field];
+      if (!time) {
+        updateData[field] = null;
+      } else {
+        const hhmmss = time.length === 5 ? `${time}:00` : time;
+        const parsedTime = new Date(`1970-01-01T${hhmmss}.000Z`);
+        updateData[field] = isNaN(parsedTime.getTime()) ? null : parsedTime;
+      }
+    }
+  }
+
+  if (data.image) {
+    updateData.image_data = data.image.buffer;
+    updateData.mime_type = data.image.mime_type;
+  }
+
+  try {
+    const banner = await prisma.banner.update({
+      where: { banner_id: bannerId },
+      data: updateData,
+      select: bannerSelect,
+    });
+
+    return withImageUrl(banner);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      throw new BannerError(404, "BANNER_NOT_FOUND", "Banner tidak ditemukan");
+    }
+    throw error;
+  }
 }
 
 async function listBannersService() {
@@ -106,10 +162,34 @@ async function deleteBannerService(bannerId) {
   }
 }
 
+async function clickBannerService({ bannerId, userId, userAgent, ipAddress }) {
+  try {
+    const insertClickedBanner = await prisma.bannerClicked.create({
+      data: {
+        banner_id: bannerId,
+        user_id: userId,
+        user_agent: userAgent,
+        ip_address: ipAddress,
+      },
+      select: {
+        banner_id: true,
+        user_id: true,
+        user_agent: true,
+      },
+    });
+
+    return insertClickedBanner;
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   BannerError,
   uploadBannerService,
+  editBannerService,
   listBannersService,
   getBannerImageService,
   deleteBannerService,
+  clickBannerService,
 };

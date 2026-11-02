@@ -48,6 +48,7 @@ model User {
   referral_program           ReferralProgram?
   sessions                   Session[]
   push_subscriptions         PushSubscription[]
+  bannerClicked              BannerClicked[]
 }
 
 model Session {
@@ -185,6 +186,7 @@ model Location {
   postal_code      String?
   shipping_address String?
   status           String?
+  dine_in_url      String?
   sub_brands       String[]
   customers        Customer[]
   saleTransaction  SaleTransaction[]
@@ -518,9 +520,11 @@ model Banner {
   end_date        DateTime?
   start_time      DateTime? @db.Time(0)
   end_time        DateTime? @db.Time(0)
-  redirect_type   RedirectType? @default(internal)
+  redirect_type   RedirectType? @default(disable)
   url             String?
   created_at      DateTime  @default(now())
+
+  bannerClicked  BannerClicked[]
 }
 
 model BannerClicked {
@@ -530,11 +534,19 @@ model BannerClicked {
   user_agent         String?
   ip_address         String?
   created_at         DateTime  @default(now())
+
+  banner  Banner    @relation(fields:[banner_id], references:[banner_id], onDelete: Cascade)
+  user    User?      @relation(fields:[user_id], references:[user_id], onDelete: Cascade)
+
+  @@index([banner_id])
+  @@index([user_id])
 }
 
 enum RedirectType {
+  disable
   internal
   external
+  orderulang
 }
 
 enum BannerType {
@@ -577,4 +589,5 @@ enum JobCategory {
 enum PromoType {
   general_promo
   loyalty_promo
+  birthday_promo
 }

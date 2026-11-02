@@ -111,7 +111,11 @@ const promoRewardAttributesSchema = z
   })
   .passthrough();
 
-const promoTypeSchema = z.enum(["general_promo", "loyalty_promo"]);
+const promoTypeSchema = z.enum([
+  "general_promo",
+  "loyalty_promo",
+  "birthday_promo",
+]);
 
 const createPromoSchema = z
   .object({

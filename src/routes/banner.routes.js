@@ -1,10 +1,16 @@
 const router = require("express").Router();
-const { auth, requireRole } = require("../middleware/authMiddleware");
+const {
+  auth,
+  requireRole,
+  guestOrAuthenticate,
+} = require("../middleware/authMiddleware");
 const { imageUpload } = require("../middleware/imageUpload");
 const {
   uploadBannerController,
+  editBannerController,
   listBannersController,
   getBannerImageController,
+  clickBannerController,
   deleteBannerController,
 } = require("../controllers/banner.controller");
 
@@ -14,6 +20,7 @@ const BANNER_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 // Publik: banner ditampilkan ke semua pengunjung, termasuk yang belum login.
 router.get("/", listBannersController);
 router.get("/:banner_id/image", getBannerImageController);
+router.post("/click", guestOrAuthenticate, clickBannerController);
 
 router.post(
   "/upload",
@@ -25,6 +32,18 @@ router.post(
     allowedMimeTypes: BANNER_MIME_TYPES,
   }),
   uploadBannerController,
+);
+
+router.put(
+  "/:banner_id",
+  auth,
+  requireRole("admin", "marketing"),
+  imageUpload({
+    fieldName: "image",
+    maxBytes: BANNER_MAX_BYTES,
+    allowedMimeTypes: BANNER_MIME_TYPES,
+  }),
+  editBannerController,
 );
 
 router.delete(

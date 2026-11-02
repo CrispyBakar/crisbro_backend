@@ -11,7 +11,13 @@ const createBannerSchema = z.object({
   end_date: z.string().optional(),
   start_time: z.string().optional(),
   end_time: z.string().optional(),
+  redirect_type: z
+    .enum(["disable", "internal", "external", "orderulang"])
+    .default("disable"),
+  url: z.string().optional(),
 });
+
+const editBannerSchema = createBannerSchema.partial();
 
 const bannerParamsSchema = z.object({
   banner_id: z
@@ -19,4 +25,15 @@ const bannerParamsSchema = z.object({
     .uuid("banner_id must be a valid UUID"),
 });
 
-module.exports = { createBannerSchema, bannerParamsSchema };
+const clickBannerSchema = z.object({
+  banner_id: z
+    .string({ required_error: "banner_id is required" })
+    .uuid("banner_id must be a valid UUID"),
+});
+
+module.exports = {
+  createBannerSchema,
+  editBannerSchema,
+  bannerParamsSchema,
+  clickBannerSchema,
+};
