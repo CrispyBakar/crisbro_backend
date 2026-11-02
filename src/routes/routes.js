@@ -14,6 +14,7 @@ const redeemTransactionRoutes = require("./redeemTransaction.routes");
 const customerAcquisitionRoutes = require("./customerAcquisition.routes");
 const pushRoutes = require("./push.routes");
 const bannerRoutes = require("./banner.routes");
+const bannerClickedRoutes = require("./bannerClicked.routes");
 
 const router = express.Router();
 
@@ -32,5 +33,6 @@ router.use("/redeem-transactions", redeemTransactionRoutes);
 router.use("/customer-acquisitions", customerAcquisitionRoutes);
 router.use("/push", pushRoutes);
 router.use("/banners", bannerRoutes);
+router.use("/banner-clicked", bannerClickedRoutes);
 
 module.exports = router;

@@ -3191,6 +3191,80 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /api/banner-clicked/analytics:
+    get:
+      tags: [Banners]
+      summary: Agregasi klik banner per hari
+      description: >-
+        Mengembalikan total klik dan deret harian inklusif. start_date/end_date
+        mengikuti tanggal WIB (Asia/Jakarta); hari tanpa klik tetap dikembalikan
+        dengan clicks = 0. Bisa difilter berdasarkan banner_id dan user_id.
+        Khusus admin dan marketing.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: start_date
+          required: true
+          schema:
+            type: string
+            format: date
+          example: "2026-10-01"
+        - in: query
+          name: end_date
+          required: true
+          schema:
+            type: string
+            format: date
+          example: "2026-10-31"
+        - in: query
+          name: banner_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: user_id
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Agregasi klik harian
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [total_clicks, series]
+                        properties:
+                          total_clicks:
+                            type: integer
+                            example: 123
+                          series:
+                            type: array
+                            items:
+                              type: object
+                              required: [date, clicks]
+                              properties:
+                                date:
+                                  type: string
+                                  format: date
+                                clicks:
+                                  type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /api/banner/{banner_id}:
     delete:
       tags: [Banners]

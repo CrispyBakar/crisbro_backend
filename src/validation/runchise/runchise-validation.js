@@ -97,6 +97,7 @@ const promoRuleAttributesSchema = z
 const promoRewardAttributesSchema = z
   .object({
     template: z.string(),
+    get_product_type: z.string().optional(),
     get_product_allow_multiple: z.boolean().optional(),
     discount_is_percentage: z.boolean().optional(),
     discount_amount: numericValue.optional(),
@@ -106,6 +107,7 @@ const promoRewardAttributesSchema = z
     get_product_ids: z.array(z.number()).default([]),
     get_product_category_ids: z.array(z.number()).default([]),
     reward_products: z.array(rewardProductSchema).default([]),
+    reward_product_condition: z.string().nullable().optional(),
     free_of_charge: z.boolean().optional(),
     apply_to_option_set: z.boolean().optional(),
   })
@@ -124,6 +126,7 @@ const createPromoSchema = z
     goal: z.enum(["increase_average_sale", "increase_number_sale"]),
     customer_allowed_dine_in: z.boolean().default(false),
     customer_allowed_online_ordering: z.boolean().default(false),
+    applicable_for_ssk: z.boolean().default(false),
     applicable_for_loyalty: z.boolean().default(false),
     start_date: promoDateInput,
     end_date: promoDateInput.nullable(),

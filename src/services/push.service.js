@@ -273,6 +273,16 @@ async function getBroadCastNotifForUser(user_id) {
       where: {
         status: "done",
       },
+      select: {
+        push_broadcast_id: true,
+        status: true,
+        sent_count: true,
+        failed_count: true,
+        created_at: true,
+        title: true,
+        body: true,
+        url: true,
+      },
       orderBy: { created_at: "desc" },
       take: 10,
     });
