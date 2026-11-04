@@ -542,6 +542,27 @@ model BannerClicked {
   @@index([user_id])
 }
 
+model UserBirthdayTreat {
+  user_birthday_id    String  @id @default(uuid())
+  customer_id         String
+  birthday_date       DateTime    @db.Date
+  treat_year          Int
+  promo_code_id       String
+  status              UserBirthdayStatus  @default(pending)
+  claimed_at          DateTime?
+  expired_at          DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+}
+
+enum UserBirthdayStatus {
+  pending
+  claimed
+  expired_unclaimed
+  expired_redeem_timeout
+  failed
+}
+
 enum RedirectType {
   disable
   internal

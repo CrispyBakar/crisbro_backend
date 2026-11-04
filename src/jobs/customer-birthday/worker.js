@@ -7,13 +7,41 @@ const {
   CUSTOMER_BIRTHDAY_TZ,
 } = require("./scheduler");
 const { connection } = require("../../lib/redis");
-const { sendBirthdayGreetings } = require("../../services/birthday.service");
+const {
+  sendBirthdayGreetings,
+  processBirthdayTreats,
+  expireOldBirthdayTreats,
+} = require("../../services/birthday.service");
 
 const worker = new Worker(
   "customer-birthday",
   // Aman di-retry: tiap device hanya diberi ucapan sekali per hari
   // (penanda di Redis), jadi job bisa dijalankan ulang tanpa spam.
-  () => sendBirthdayGreetings(),
+  async () => {
+    // 1. Expiredkan birthday treats yang sudah lewat masa berlakunya
+    console.log("[birthday] Memproses expired birthday treats...");
+    const expiredResult = await expireOldBirthdayTreats();
+    console.log(`[birthday] Expired result: ${JSON.stringify(expiredResult)}`);
+
+    // 2. Proses pemberian birthday treat (voucher) ke customer yang berulang tahun
+    //    Dilakukan SEBELUM mengirim greeting, supaya voucher sudah tersedia
+    //    saat customer menerima notifikasi
+    console.log("[birthday] Memproses birthday treats...");
+    const treatResult = await processBirthdayTreats();
+    console.log(`[birthday] Treat result: ${JSON.stringify(treatResult)}`);
+
+    // 3. Kirim ucapan ulang tahun + info voucher
+    console.log("[birthday] Mengirim ucapan ulang tahun...");
+    const greetingResult = await sendBirthdayGreetings();
+    console.log(`[birthday] Greeting result: ${JSON.stringify(greetingResult)}`);
+
+    // Return combined result
+    return {
+      expired: expiredResult,
+      treat: treatResult,
+      greeting: greetingResult,
+    };
+  },
   {
     connection,
     concurrency: 1,
