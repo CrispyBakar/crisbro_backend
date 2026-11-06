@@ -6,6 +6,7 @@ const {
   findUserSubscriptions,
   sendToSubscriptions,
 } = require("./push.service");
+const { deactivatePromoCode } = require("./runchise.service");
 
 const SEND_CONCURRENCY = 10;
 // Penanda "sudah dikirim" cukup hidup beberapa hari; tujuannya hanya mencegah
@@ -29,7 +30,7 @@ async function findBirthdayCustomers(now) {
   const parts = getWibDateParts(now);
   const days = getBirthdayDays(parts);
 
-  return prisma.$queryRaw`
+  const result = await prisma.$queryRaw`
     SELECT c.customer_id, c.user_id, c.name
     FROM "Customer" c
     INNER JOIN "User" u ON u.user_id = c.user_id
@@ -41,6 +42,8 @@ async function findBirthdayCustomers(now) {
         SELECT 1 FROM "PushSubscription" p WHERE p.user_id = c.user_id
       )
   `;
+
+  return result;
 }
 
 function buildBirthdayMessage(name) {
@@ -160,9 +163,6 @@ async function handleBirthdayCustomer(customer) {
     };
   }
 
-  // Generate UUID untuk user_birthday_id
-  const user_birthday_id = require("crypto").uuid();
-
   try {
     // Gunakan transaction untuk memastikan atomicity:
     // 1. Update promo_code menjadi claimed
@@ -177,7 +177,6 @@ async function handleBirthdayCustomer(customer) {
       // Buat record birthday treat untuk customer
       const birthdayTreat = await tx.userBirthdayTreat.create({
         data: {
-          user_birthday_id,
           customer_id: customer.customer_id,
           birthday_date: new Date(
             Date.UTC(parts.year, parts.month - 1, parts.day),
@@ -358,26 +357,62 @@ async function expireOldBirthdayTreats({ now = new Date() } = {}) {
   const redeemDeadline = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   try {
-    // Update status deactivate untuk promo code runchise yang sudah lewat masa berlaku (expired) di lokal database.
-
-    // Update status menjadi expired_redeem_timeout di lokal database.
-    const redeemResult = await prisma.userBirthdayTreat.updateMany({
+    // 1. Ambi dulu treats yang akan di-expire (untuk mendapatkan promo_code_id).
+    const toExpire = await prisma.userBirthdayTreat.findMany({
       where: {
         status: "claimed",
         claimed_at: { lt: redeemDeadline },
         expired_at: null,
       },
-      data: {
-        status: "expired_redeem_timeout",
-        expired_at: now,
+      select: {
+        user_birthday_id: true,
+        customer_id: true,
+        promo_code_id: true,
       },
     });
 
-    results.redeem_expired = redeemResult.count;
+    const ids = toExpire.map((t) => t.user_birthday_id);
 
-    if (redeemResult.count > 0) {
+    // 2. Update status di lokal database.
+    if (ids.length > 0) {
+      await prisma.userBirthdayTreat.updateMany({
+        where: { user_birthday_id: { in: ids } },
+        data: {
+          status: "expired_redeem_timeout",
+          expired_at: now,
+        },
+      });
+    }
+
+    // Deactivate promo_code di Runchise supaya tidak bisa dipakai lagi.
+    for (const treat of toExpire) {
+      if (!treat.promo_code_id) {
+        console.warn(
+          `[birthday] Treat ${treat.user_birthday_id} tidak memiliki promo_code_id, tidak bisa dinonaktifkan.`,
+        );
+        continue;
+      }
+
+      try {
+        await deactivatePromoCodeById(treat.promo_code_id);
+      } catch (err) {
+        results.errors.push({
+          type: "redeem_deactivate",
+          user_birthday_id: treat.user_birthday_id,
+          error: err.message,
+        });
+        console.error(
+          `[birthday] Gagal menonaktifkan promo_code ${treat.promo_code_id} pada runchise untuk expired redeem timeout:`,
+          err.message,
+        );
+      }
+    }
+
+    results.redeem_expired = toExpire.length;
+
+    if (toExpire.length > 0) {
       console.log(
-        `[birthday] ${redeemResult.count} treats EXPIRED REDEEM TIMEOUT (lewat 7 hari dari claim date)`,
+        `[birthday] ${toExpire.length} treats EXPIRED REDEEM TIMEOUT (lewat 7 hari dari claim date)`,
       );
     }
   } catch (error) {
@@ -398,10 +433,132 @@ async function expireOldBirthdayTreats({ now = new Date() } = {}) {
   };
 }
 
+async function deactivatePromoCodeById(promo_code_id) {
+  try {
+    const promoCode = await prisma.promoCode.findUnique({
+      where: { promo_code_id },
+      include: {
+        promo: true,
+      },
+    });
+
+    const promo_id = promoCode?.promo?.promo_id;
+
+    if (!promoCode || !promo_id) {
+      console.error(
+        `[birthday] Promo code dengan ID ${promo_code_id} tidak ditemukan atau tidak memiliki promo terkait.`,
+      );
+      return;
+    }
+
+    await prisma.promoCode.update({
+      where: { promo_code_id },
+      data: {
+        status: "inactive",
+      },
+    });
+
+    await deactivatePromoCode(promo_id, promo_code_id);
+    console.log(
+      `[birthday] Promo code ${promo_code_id} berhasil dinonaktifkan.`,
+    );
+  } catch (error) {
+    console.error(
+      `[birthday] Gagal menonaktifkan promo_code ${promo_code_id}:`,
+      error.message,
+    );
+  }
+}
+
+// Cek apakah customer yang sedang login punya birthday treat yang masih bisa
+// di-claim (popup claim voucher setelah login). Hanya treat berstatus "pending"
+// yang layak ditampilkan; "claimed"/"expired_*" tidak lagi memunculkan popup.
+async function getMyBirthdayTreat(user_id) {
+  if (!user_id) throw new Error("user_id is required");
+
+  const customer = await prisma.customer.findUnique({
+    where: { user_id },
+    select: { customer_id: true },
+  });
+
+  if (!customer) {
+    return { has_claimable_treat: false, treat: null };
+  }
+
+  const treat = await prisma.userBirthdayTreat.findFirst({
+    where: {
+      customer_id: customer.customer_id,
+      status: "pending",
+    },
+    orderBy: { created_at: "desc" },
+    select: {
+      user_birthday_id: true,
+      birthday_date: true,
+      treat_year: true,
+      status: true,
+      created_at: true,
+      promo_code_id: true,
+    },
+  });
+
+  return { has_claimable_treat: Boolean(treat), treat };
+}
+
+async function claimCustomerBirthdayTreat(user_id) {
+  if (!user_id) throw new Error("user_id is required");
+
+  const customer = await prisma.customer.findUnique({
+    where: { user_id },
+    select: { customer_id: true },
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found");
+  }
+
+  const now = new Date();
+
+  try {
+    // Update birthday treat status to claimed
+    const claimedTreat = await prisma.userBirthdayTreat.update({
+      where: {
+        customer_id_treat_year: {
+          customer_id: customer.customer_id,
+          treat_year: new Date().getFullYear(),
+        },
+        status: "pending",
+      },
+      data: {
+        status: "claimed",
+        claimed_at: now,
+      },
+    });
+
+    if (!claimedTreat) {
+      throw new Error("No pending birthday treat found for this customer");
+    }
+
+    // Create a redeem transaction for the birthday treat.
+    const redeemTransaction = await prisma.redeemTransaction.create({
+      data: {
+        promo_code_id: claimedTreat.promo_code_id,
+        customer_id: customer.customer_id,
+        redeemed_type: "birthday",
+      },
+    });
+
+    return claimedTreat;
+  } catch (error) {
+    throw new Error(`Failed to claim birthday treat: ${error.message}`);
+  }
+}
+
 module.exports = {
   sendBirthdayGreetings,
   getBirthdayDays,
   handleBirthdayCustomer,
   processBirthdayTreats,
   expireOldBirthdayTreats,
+  getMyBirthdayTreat,
+  claimCustomerBirthdayTreat,
 };

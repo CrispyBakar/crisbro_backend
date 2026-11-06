@@ -9,7 +9,7 @@ async function registerCustomerBirthdayScheduler() {
   // The cron is expressed in UTC; birthday selection still uses the WIB date.
   return birthdayQueue.upsertJobScheduler(
     "customer-birthday-daily",
-    { pattern: CUSTOMER_BIRTHDAY_PATTERN, tz: CUSTOMER_BIRTHDAY_TZ },
+    { every: 30_000, tz: CUSTOMER_BIRTHDAY_TZ },
     {
       name: "customer-birthday",
       data: {},

@@ -591,6 +591,71 @@ async function activatePromo(runchise_promo_id) {
   }
 }
 
+// Runchise server kadang tidak stabil; retry request dengan exponential backoff.
+// Hanya error yang layak di-retry: network error (tanpa response), timeout,
+// ECONNABORTED, 408, 429, dan 5xx. Error 4xx lain (mis. 404/422) langsung throw.
+const RETRYABLE_HTTP_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+function isRetryableRunchiseError(error) {
+  if (!axios.isAxiosError(error)) return false;
+  if (!error.response) return true; // network error / timeout / DNS
+  return RETRYABLE_HTTP_STATUS.has(error.response.status);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryRunchiseRequest(fn, {
+  retries = 3,
+  baseDelayMs = 1000,
+  label = "runchise",
+} = {}) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= retries + 1; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt > retries || !isRetryableRunchiseError(error)) break;
+
+      const delay = baseDelayMs * 2 ** (attempt - 1);
+      console.warn(
+        `[${label}] Percobaan ${attempt}/${retries} gagal (${error.code || error.response?.status || error.message}), retry dalam ${delay}ms...`,
+      );
+      await sleep(delay);
+    }
+  }
+
+  throw lastError;
+}
+
+async function deactivatePromoCode(runchise_promo_id, runchise_promo_code_id) {
+  try {
+    const res = await retryRunchiseRequest(
+      () =>
+        runchiseClient.patch(
+          `/promos/${runchise_promo_id}/promo_codes/${runchise_promo_code_id}/deactivate`,
+        ),
+      { label: "runchise" },
+    );
+    return res.status === 204 ? true : null;
+  } catch (error) {
+
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.errors
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      throw Object.assign(new Error(message, { cause: error }), {
+        code: "RUNCHISE_REQUEST_FAILED",
+        statusCode: 502,
+      });
+    }
+    throw error;
+  }
+}
+
 async function generatePromoCode({ runchise_promo_id, total_code }) {
   try {
     const { z, custom } = require("zod");
@@ -998,4 +1063,5 @@ module.exports = {
   getAllProducts,
   generateAllCustomerHasPoint,
   getDetailSaleTransaction,
+  deactivatePromoCode,
 };

@@ -15,6 +15,7 @@ const customerAcquisitionRoutes = require("./customerAcquisition.routes");
 const pushRoutes = require("./push.routes");
 const bannerRoutes = require("./banner.routes");
 const bannerClickedRoutes = require("./bannerClicked.routes");
+const birthdayRoutes = require("./birthday.routes");
 
 const router = express.Router();
 
@@ -34,5 +35,6 @@ router.use("/customer-acquisitions", customerAcquisitionRoutes);
 router.use("/push", pushRoutes);
 router.use("/banners", bannerRoutes);
 router.use("/banner-clicked", bannerClickedRoutes);
+router.use("/birthday-treat", birthdayRoutes);
 
 module.exports = router;

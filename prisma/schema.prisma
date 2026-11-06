@@ -458,6 +458,7 @@ model RedeemTransaction {
   customer_id           String
   points_spent          Int       @default(0) // snapshot poin saat redeem
   redeemed_at           DateTime  @default(now())
+  redeemed_type         RedeemedType @default(loyalty)
   customer              Customer  @relation(fields: [customer_id], references: [customer_id], onDelete: Cascade)
   promoCode             PromoCode @relation(fields: [promo_code_id], references: [promo_code_id], onDelete: Cascade)
 
@@ -553,6 +554,13 @@ model UserBirthdayTreat {
   expired_at          DateTime?
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
+
+  @@unique([customer_id, treat_year])
+}
+
+enum RedeemedType {
+  loyalty
+  birthday
 }
 
 enum UserBirthdayStatus {
