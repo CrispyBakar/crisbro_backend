@@ -1,6 +1,7 @@
 const {
   getMyBirthdayTreat,
   claimCustomerBirthdayTreat,
+  getBirthdayPromoInformation,
 } = require("../services/birthday.service");
 const {
   successRequest,
@@ -54,7 +55,28 @@ async function claimCustomerBirthdayTreatController(req, res) {
   }
 }
 
+async function promoCodeInformation(req, res) {
+  const promo_code_id = req.params.promoCodeId;
+
+  if (!promo_code_id)
+    badRequest({ res, code: 422, error: "promoCodeId is required" });
+
+  try {
+    const promo = await getBirthdayPromoInformation(promo_code_id);
+
+    return successRequest({
+      res,
+      code: 200,
+      data: promo,
+      message: "Retrive promo information success",
+    });
+  } catch (error) {
+    return respondWithServerError(res, error, "Get Promo Information failed");
+  }
+}
+
 module.exports = {
   getMyBirthdayTreatController,
   claimCustomerBirthdayTreatController,
+  promoCodeInformation,
 };

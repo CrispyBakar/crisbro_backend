@@ -553,6 +553,42 @@ async function claimCustomerBirthdayTreat(user_id) {
   }
 }
 
+async function getBirthdayPromoInformation(promo_code_id) {
+  if (!promo_code_id) throw new Error("promo_code_id is required");
+
+  const promoCode = await prisma.promoCode.findUnique({
+    where: { promo_code_id },
+    select: {
+      promo_code_id: true,
+      usage_type: true,
+      status: true,
+      maximum_usage: true,
+      runchise_id: true,
+      is_claimed: true,
+      promo: {
+        select: {
+          promo_id: true,
+          runchise_id: true,
+          name: true,
+          status: true,
+          channel: true,
+          created_at: true,
+          updated_at: true,
+          goal: true,
+          promo_type: true,
+          location_ids: true,
+          product_ids: true,
+          terms_conditions: true,
+        },
+      },
+    },
+  });
+
+  if (!promoCode) throw new Error("Promo doesn't exist.");
+
+  return promoCode;
+}
+
 module.exports = {
   sendBirthdayGreetings,
   getBirthdayDays,
@@ -561,4 +597,5 @@ module.exports = {
   expireOldBirthdayTreats,
   getMyBirthdayTreat,
   claimCustomerBirthdayTreat,
+  getBirthdayPromoInformation,
 };

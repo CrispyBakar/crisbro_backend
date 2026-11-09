@@ -2,6 +2,7 @@ const { auth, requireRole } = require("../middleware/authMiddleware");
 const {
   getMyBirthdayTreatController,
   claimCustomerBirthdayTreatController,
+  promoCodeInformation,
 } = require("../controllers/birthday.controller");
 
 const router = require("express").Router();
@@ -15,5 +16,7 @@ router.post(
   requireRole("customer"),
   claimCustomerBirthdayTreatController,
 );
+// Get Promo information terms and contions
+router.get("/promo/promoCode/:promoCodeId", auth, promoCodeInformation);
 
 module.exports = router;
